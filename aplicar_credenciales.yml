@@ -5,8 +5,23 @@
   gather_facts: false
 
   vars_files:
-    - secrets.yml       # valores cifrados con ansible-vault
-    - credentials.yml   # definiciones de credenciales (referencian vault_*)
+    - secrets.yml
+    - credentials.yml
 
-  roles:
-    - infra.controller_configuration.credentials
+  tasks:
+    - name: Crear/actualizar credenciales en AAP
+      ansible.controller.credential:
+        controller_host: "{{ controller_hostname }}"
+        controller_username: "{{ controller_username }}"
+        controller_password: "{{ controller_password }}"
+        validate_certs: "{{ controller_validate_certs }}"
+        name: "{{ item.name }}"
+        organization: "{{ item.organization }}"
+        credential_type: "{{ item.credential_type }}"
+        description: "{{ item.description | default(omit) }}"
+        inputs: "{{ item.inputs }}"
+        state: present
+      loop: "{{ controller_credentials }}"
+      loop_control:
+        label: "{{ item.name }}"
+      no_log: true
