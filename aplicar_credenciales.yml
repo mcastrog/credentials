@@ -1,0 +1,12 @@
+---
+- name: Aplicar credenciales via CaC con Ansible Vault
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - secrets.yml       # valores cifrados con ansible-vault
+    - credentials.yml   # definiciones de credenciales (referencian vault_*)
+
+  roles:
+    - infra.controller_configuration.credentials
