@@ -62,10 +62,16 @@
         wait: true
         state: present
 
-    - name: "Crear Inventario-Prod en Org-Alpha"
+    - name: "Crear Inventario en Org-Alpha"
       ansible.controller.inventory:
-        name: "Inventario-Prod"
+        name: "Inv-Alpha"
         organization: "Org-Alpha"
+        state: present
+
+    - name: "Crear Inventario en Org-Beta"
+      ansible.controller.inventory:
+        name: "Inv-Beta"
+        organization: "Org-Beta"
         state: present
 
     - name: "Crear JT-Deploy en Org-Alpha"
@@ -74,23 +80,17 @@
         organization: "Org-Alpha"
         project: "Proyecto-App"
         playbook: "hello_world.yml"
-        inventory: "Inventario-Prod"
+        inventory: "Inv-Alpha"
         state: present
       register: jt_alpha
 
-    - name: "Crear Inventario-Prod en Org-Beta"
-      ansible.controller.inventory:
-        name: "Inventario-Prod"
-        organization: "Org-Beta"
-        state: present
-
-    - name: "Crear JT-Deploy en Org-Beta (MISMO NOMBRE)"
+    - name: "Crear JT-Deploy en Org-Beta (MISMO NOMBRE de JT)"
       ansible.controller.job_template:
         name: "JT-Deploy"
         organization: "Org-Beta"
         project: "Proyecto-App"
         playbook: "hello_world.yml"
-        inventory: "Inventario-Prod"
+        inventory: "Inv-Beta"
         state: present
       register: jt_beta
 
@@ -229,7 +229,7 @@
       ansible.controller.role:
         team: "Team-Deploy"
         role: "use"
-        inventories: ["Inventario-Prod"]
+        inventories: ["Inv-Alpha"]
         lookup_organization: "Org-Alpha"
         state: present
       register: idemp_1
@@ -238,7 +238,7 @@
       ansible.controller.role:
         team: "Team-Deploy"
         role: "use"
-        inventories: ["Inventario-Prod"]
+        inventories: ["Inv-Alpha"]
         lookup_organization: "Org-Alpha"
         state: present
       register: idemp_2
