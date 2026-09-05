@@ -4,8 +4,8 @@
   connection: local
   gather_facts: false
 
-  module_defaults:
-    group/ansible.platform.aap:
+  vars:
+    platform_auth: &platform_auth
       aap_hostname: "{{ aap_hostname }}"
       aap_username: "{{ aap_username }}"
       aap_password: "{{ aap_password }}"
@@ -14,6 +14,7 @@
   tasks:
     - name: "TEST 1A - Asignar permiso sobre ORGANIZACION via ansible.platform (deberia funcionar)"
       ansible.platform.role_team_assignment:
+        <<: *platform_auth
         team: "Team-Test-RBAC"
         role_definition: "Organization Member"
         object_id: "{{ org_id }}"
@@ -26,6 +27,7 @@
 
     - name: "TEST 1B - Asignar permiso sobre JOB TEMPLATE via ansible.platform (probamos si funciona)"
       ansible.platform.role_team_assignment:
+        <<: *platform_auth
         team: "Team-Test-RBAC"
         role_definition: "JobTemplate Execute"
         object_id: "{{ jt_id }}"
@@ -39,6 +41,7 @@
 
     - name: "TEST 1C - Asignar permiso sobre INVENTARIO via ansible.platform (probamos si funciona)"
       ansible.platform.role_team_assignment:
+        <<: *platform_auth
         team: "Team-Test-RBAC"
         role_definition: "Inventory Use"
         object_id: "{{ inv_id }}"
