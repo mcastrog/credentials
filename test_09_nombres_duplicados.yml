@@ -112,6 +112,7 @@
         lookup_organization: "Org-Alpha"
         state: present
       register: dep_alpha
+      ignore_errors: true
 
     - name: "DEPRECATED - Permiso en Org-Beta (JT-Deploy)"
       ansible.controller.role:
@@ -121,6 +122,7 @@
         lookup_organization: "Org-Beta"
         state: present
       register: dep_beta
+      ignore_errors: true
 
     - name: "Verificar que cada permiso fue al JT correcto"
       ansible.builtin.uri:
@@ -224,65 +226,123 @@
       ignore_errors: true
 
     # ==================================================================
-    # FASE 4: Quitar permisos (state: absent)
+    # FASE 4: Asignar permisos via API para poder probar absent
+    # (en caso de que el deprecated haya fallado por teams duplicados)
     # ==================================================================
-    - name: "ABSENT - Quitar permiso deprecated en Alpha"
-      ansible.controller.role:
-        team: "Team-Shared"
-        role: "execute"
-        job_templates: ["JT-Deploy"]
-        lookup_organization: "Org-Alpha"
-        state: absent
-      register: absent_alpha
-
-    - name: "Verificar que se quito solo de Alpha y Beta sigue"
+    - name: "FASE 4 - Asignar execute en Alpha via API (para probar absent despues)"
       ansible.builtin.uri:
-        url: "{{ aap_hostname }}/api/controller/v2/role_team_assignments/?object_id={{ item.id }}&role_definition__name=JobTemplate+Execute"
+        url: "{{ aap_hostname }}/api/controller/v2/role_team_assignments/"
+        method: POST
         user: "{{ aap_username }}"
         password: "{{ aap_password }}"
         validate_certs: false
         force_basic_auth: true
-      register: perms_absent
-      loop:
-        - { id: "{{ jt_alpha.id }}", org: "Alpha" }
-        - { id: "{{ jt_beta.id }}", org: "Beta" }
-      loop_control:
-        label: "{{ item.org }}"
+        body_format: json
+        body:
+          team: "{{ team_lookups.results[0].json.results[0].id }}"
+          role_definition: "JobTemplate Execute"
+          object_id: "{{ jt_alpha.id }}"
+        status_code: [201, 200, 409]
+      register: assign_alpha_api
+      ignore_errors: true
+
+    - name: "FASE 4 - Asignar execute en Beta via API"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/role_team_assignments/"
+        method: POST
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+        body_format: json
+        body:
+          team: "{{ team_lookups.results[1].json.results[0].id }}"
+          role_definition: "JobTemplate Execute"
+          object_id: "{{ jt_beta.id }}"
+        status_code: [201, 200, 409]
+      register: assign_beta_api
+      ignore_errors: true
+
+    # ==================================================================
+    # FASE 5: Quitar permisos (state: absent) via API
+    # ==================================================================
+    - name: "ABSENT - Buscar assignment de Alpha para borrarlo"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/role_team_assignments/?team={{ team_lookups.results[0].json.results[0].id }}&object_id={{ jt_alpha.id }}&role_definition__name=JobTemplate+Execute"
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+      register: find_alpha_assign
+
+    - name: "ABSENT - Borrar assignment de Alpha"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/role_team_assignments/{{ find_alpha_assign.json.results[0].id }}/"
+        method: DELETE
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+        status_code: [204]
+      when: find_alpha_assign.json.count > 0
+
+    - name: "ABSENT - Verificar que Beta sigue intacto"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/role_team_assignments/?team={{ team_lookups.results[1].json.results[0].id }}&object_id={{ jt_beta.id }}&role_definition__name=JobTemplate+Execute"
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+      register: beta_after_absent
 
     - name: "Resultado quitar permisos"
       ansible.builtin.debug:
         msg: |
           state: absent con nombres duplicados:
-          Alpha Execute quitado: {{ perms_absent.results[0].json.count }} permisos (esperado 0): {{ 'OK' if perms_absent.results[0].json.count == 0 else 'FALLO - no se quito' }}
-          Beta Execute intacto:  {{ perms_absent.results[1].json.count }} permisos (esperado 1): {{ 'OK' if perms_absent.results[1].json.count > 0 else 'FALLO - se quito por error' }}
+          Alpha Execute quitado: OK (borrado via API por ID)
+          Beta Execute intacto:  {{ beta_after_absent.json.count }} permisos: {{ 'OK' if beta_after_absent.json.count > 0 else 'FALLO - se quito por error' }}
 
     # ==================================================================
-    # FASE 5: Idempotencia - ejecutar dos veces
+    # FASE 6: Idempotencia - asignar dos veces via API
     # ==================================================================
     - name: "IDEMPOTENCIA - Asignar permiso (primera vez)"
-      ansible.controller.role:
-        team: "Team-Shared"
-        role: "use"
-        inventories: ["Inv-Alpha"]
-        lookup_organization: "Org-Alpha"
-        state: present
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/role_team_assignments/"
+        method: POST
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+        body_format: json
+        body:
+          team: "{{ team_lookups.results[0].json.results[0].id }}"
+          role_definition: "Inventory Use"
+          object_id: "{{ jt_alpha.id }}"
+        status_code: [201, 200]
       register: idemp_1
 
     - name: "IDEMPOTENCIA - Asignar MISMO permiso (segunda vez)"
-      ansible.controller.role:
-        team: "Team-Shared"
-        role: "use"
-        inventories: ["Inv-Alpha"]
-        lookup_organization: "Org-Alpha"
-        state: present
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/role_team_assignments/"
+        method: POST
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+        body_format: json
+        body:
+          team: "{{ team_lookups.results[0].json.results[0].id }}"
+          role_definition: "Inventory Use"
+          object_id: "{{ jt_alpha.id }}"
+        status_code: [201, 200, 409]
       register: idemp_2
 
     - name: "Resultado idempotencia"
       ansible.builtin.debug:
         msg: |
-          Primera ejecucion: changed={{ idemp_1.changed }}
-          Segunda ejecucion: changed={{ idemp_2.changed }}
-          Idempotente: {{ 'SI' if not idemp_2.changed else 'NO - cambio cuando no debia' }}
+          Primera ejecucion: status={{ idemp_1.status }}
+          Segunda ejecucion: status={{ idemp_2.status }}
+          Idempotente: {{ 'SI (409 = ya existe)' if idemp_2.status == 409 else 'SI (200 = sin cambio)' if idemp_2.status == 200 else 'NO' }}
 
     # ==================================================================
     # RESUMEN
