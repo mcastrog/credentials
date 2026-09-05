@@ -1,0 +1,276 @@
+---
+- name: "Test 09 - Nombres duplicados en diferentes organizaciones"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  module_defaults:
+    group/ansible.controller.controller:
+      controller_host: "{{ aap_hostname }}"
+      controller_username: "{{ aap_username }}"
+      controller_password: "{{ aap_password }}"
+      validate_certs: "{{ aap_validate_certs | default(false) }}"
+
+  vars:
+    platform_auth: &platform_auth
+      aap_hostname: "{{ aap_hostname }}"
+      aap_username: "{{ aap_username }}"
+      aap_password: "{{ aap_password }}"
+      aap_validate_certs: "{{ aap_validate_certs | default(false) }}"
+
+  tasks:
+    # ==================================================================
+    # FASE 1: Crear dos orgs con objetos que tienen EL MISMO NOMBRE
+    # ==================================================================
+    - name: "Crear Org-Alpha"
+      ansible.controller.organization:
+        name: "Org-Alpha"
+        state: present
+
+    - name: "Crear Org-Beta"
+      ansible.controller.organization:
+        name: "Org-Beta"
+        state: present
+
+    - name: "Crear Team-Deploy en Org-Alpha"
+      ansible.controller.team:
+        name: "Team-Deploy"
+        organization: "Org-Alpha"
+        state: present
+
+    - name: "Crear Team-Deploy en Org-Beta (MISMO NOMBRE)"
+      ansible.controller.team:
+        name: "Team-Deploy"
+        organization: "Org-Beta"
+        state: present
+
+    - name: "Crear Proyecto-App en Org-Alpha"
+      ansible.controller.project:
+        name: "Proyecto-App"
+        organization: "Org-Alpha"
+        scm_type: git
+        scm_url: "https://github.com/ansible/ansible-tower-samples.git"
+        wait: true
+        state: present
+
+    - name: "Crear Proyecto-App en Org-Beta (MISMO NOMBRE)"
+      ansible.controller.project:
+        name: "Proyecto-App"
+        organization: "Org-Beta"
+        scm_type: git
+        scm_url: "https://github.com/ansible/ansible-tower-samples.git"
+        wait: true
+        state: present
+
+    - name: "Crear Inventario-Prod en ambas orgs"
+      ansible.controller.inventory:
+        name: "Inventario-Prod"
+        organization: "{{ item }}"
+        state: present
+      loop: ["Org-Alpha", "Org-Beta"]
+
+    - name: "Crear JT-Deploy en Org-Alpha"
+      ansible.controller.job_template:
+        name: "JT-Deploy"
+        organization: "Org-Alpha"
+        project: "Proyecto-App"
+        playbook: "hello_world.yml"
+        inventory: "Inventario-Prod"
+        state: present
+      register: jt_alpha
+
+    - name: "Crear JT-Deploy en Org-Beta (MISMO NOMBRE)"
+      ansible.controller.job_template:
+        name: "JT-Deploy"
+        organization: "Org-Beta"
+        project: "Proyecto-App"
+        playbook: "hello_world.yml"
+        inventory: "Inventario-Prod"
+        state: present
+      register: jt_beta
+
+    - name: "IDs de los JTs con mismo nombre"
+      ansible.builtin.debug:
+        msg: |
+          JT-Deploy en Org-Alpha: ID {{ jt_alpha.id }}
+          JT-Deploy en Org-Beta:  ID {{ jt_beta.id }}
+          Son diferentes: {{ jt_alpha.id != jt_beta.id }}
+
+    # ==================================================================
+    # FASE 2: Asignar permisos con DEPRECATED (por nombre + org)
+    # ==================================================================
+    - name: "DEPRECATED - Permiso en Org-Alpha (JT-Deploy)"
+      ansible.controller.role:
+        team: "Team-Deploy"
+        role: "execute"
+        job_templates: ["JT-Deploy"]
+        lookup_organization: "Org-Alpha"
+        state: present
+      register: dep_alpha
+
+    - name: "DEPRECATED - Permiso en Org-Beta (JT-Deploy)"
+      ansible.controller.role:
+        team: "Team-Deploy"
+        role: "execute"
+        job_templates: ["JT-Deploy"]
+        lookup_organization: "Org-Beta"
+        state: present
+      register: dep_beta
+
+    - name: "Verificar que cada permiso fue al JT correcto"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/role_team_assignments/?object_id={{ item.id }}"
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+      register: perms_check
+      loop:
+        - { id: "{{ jt_alpha.id }}", org: "Org-Alpha" }
+        - { id: "{{ jt_beta.id }}", org: "Org-Beta" }
+      loop_control:
+        label: "{{ item.org }}"
+
+    - name: "Resultado deprecated con nombres duplicados"
+      ansible.builtin.debug:
+        msg: |
+          DEPRECATED (por nombre + lookup_organization):
+          JT-Deploy en Org-Alpha (ID {{ jt_alpha.id }}): {{ perms_check.results[0].json.count }} permisos - {{ 'OK asigno al correcto' if perms_check.results[0].json.count > 0 else 'FALLO' }}
+          JT-Deploy en Org-Beta (ID {{ jt_beta.id }}):  {{ perms_check.results[1].json.count }} permisos - {{ 'OK asigno al correcto' if perms_check.results[1].json.count > 0 else 'FALLO' }}
+
+    # ==================================================================
+    # FASE 3: Workaround con nombres duplicados (resolver nombre + org → ID)
+    # ==================================================================
+    - name: "WORKAROUND - Resolver JT-Deploy en Org-Alpha"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/job_templates/?name=JT-Deploy&organization__name=Org-Alpha"
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+      register: lookup_alpha
+
+    - name: "WORKAROUND - Resolver JT-Deploy en Org-Beta"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/job_templates/?name=JT-Deploy&organization__name=Org-Beta"
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+      register: lookup_beta
+
+    - name: "WORKAROUND - Verificar que resuelve al ID correcto"
+      ansible.builtin.debug:
+        msg: |
+          Workaround resolver nombre + org:
+          JT-Deploy + Org-Alpha -> ID {{ lookup_alpha.json.results[0].id }} (esperado {{ jt_alpha.id }}): {{ 'OK' if lookup_alpha.json.results[0].id | int == jt_alpha.id | int else 'FALLO' }}
+          JT-Deploy + Org-Beta  -> ID {{ lookup_beta.json.results[0].id }} (esperado {{ jt_beta.id }}):  {{ 'OK' if lookup_beta.json.results[0].id | int == jt_beta.id | int else 'FALLO' }}
+          Resultados unicos Alpha: {{ lookup_alpha.json.count }} (esperado 1)
+          Resultados unicos Beta:  {{ lookup_beta.json.count }} (esperado 1)
+
+    - name: "WORKAROUND - Asignar admin con ID resuelto en Alpha"
+      ansible.controller.role_team_assignment:
+        team: "Team-Deploy"
+        role_definition: "JobTemplate Admin"
+        object_id: "{{ lookup_alpha.json.results[0].id }}"
+        state: present
+      register: wk_alpha
+
+    - name: "WORKAROUND - Asignar admin con ID resuelto en Beta"
+      ansible.controller.role_team_assignment:
+        team: "Team-Deploy"
+        role_definition: "JobTemplate Admin"
+        object_id: "{{ lookup_beta.json.results[0].id }}"
+        state: present
+      register: wk_beta
+
+    # ==================================================================
+    # FASE 4: Quitar permisos (state: absent)
+    # ==================================================================
+    - name: "ABSENT - Quitar permiso deprecated en Alpha"
+      ansible.controller.role:
+        team: "Team-Deploy"
+        role: "execute"
+        job_templates: ["JT-Deploy"]
+        lookup_organization: "Org-Alpha"
+        state: absent
+      register: absent_alpha
+
+    - name: "Verificar que se quito solo de Alpha y Beta sigue"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/role_team_assignments/?object_id={{ item.id }}&role_definition__name=JobTemplate+Execute"
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+      register: perms_absent
+      loop:
+        - { id: "{{ jt_alpha.id }}", org: "Alpha" }
+        - { id: "{{ jt_beta.id }}", org: "Beta" }
+      loop_control:
+        label: "{{ item.org }}"
+
+    - name: "Resultado quitar permisos"
+      ansible.builtin.debug:
+        msg: |
+          state: absent con nombres duplicados:
+          Alpha Execute quitado: {{ perms_absent.results[0].json.count }} permisos (esperado 0): {{ 'OK' if perms_absent.results[0].json.count == 0 else 'FALLO - no se quito' }}
+          Beta Execute intacto:  {{ perms_absent.results[1].json.count }} permisos (esperado 1): {{ 'OK' if perms_absent.results[1].json.count > 0 else 'FALLO - se quito por error' }}
+
+    # ==================================================================
+    # FASE 5: Idempotencia - ejecutar dos veces
+    # ==================================================================
+    - name: "IDEMPOTENCIA - Asignar permiso (primera vez)"
+      ansible.controller.role:
+        team: "Team-Deploy"
+        role: "use"
+        inventories: ["Inventario-Prod"]
+        lookup_organization: "Org-Alpha"
+        state: present
+      register: idemp_1
+
+    - name: "IDEMPOTENCIA - Asignar MISMO permiso (segunda vez)"
+      ansible.controller.role:
+        team: "Team-Deploy"
+        role: "use"
+        inventories: ["Inventario-Prod"]
+        lookup_organization: "Org-Alpha"
+        state: present
+      register: idemp_2
+
+    - name: "Resultado idempotencia"
+      ansible.builtin.debug:
+        msg: |
+          Primera ejecucion: changed={{ idemp_1.changed }}
+          Segunda ejecucion: changed={{ idemp_2.changed }}
+          Idempotente: {{ 'SI' if not idemp_2.changed else 'NO - cambio cuando no debia' }}
+
+    # ==================================================================
+    # RESUMEN
+    # ==================================================================
+    - name: "RESUMEN TEST 09"
+      ansible.builtin.debug:
+        msg: |
+          =====================================================================
+          TEST 09: NOMBRES DUPLICADOS, ABSENT E IDEMPOTENCIA
+          =====================================================================
+
+          NOMBRES DUPLICADOS (JT-Deploy en Org-Alpha y Org-Beta):
+            Deprecated (nombre + lookup_org):  {{ 'OK' if dep_alpha is not failed and dep_beta is not failed else 'FALLO' }} - asigna al JT correcto en cada org
+            Workaround (API + org filter):     {{ 'OK' if wk_alpha is not failed and wk_beta is not failed else 'FALLO' }} - resuelve ID correcto por org
+            Resultados unicos por org:         Alpha={{ lookup_alpha.json.count }} Beta={{ lookup_beta.json.count }}
+
+          QUITAR PERMISOS (state: absent):
+            Quitar de Alpha sin afectar Beta:  {{ 'OK' if perms_absent.results[0].json.count == 0 and perms_absent.results[1].json.count > 0 else 'FALLO' }}
+
+          IDEMPOTENCIA:
+            Segunda ejecucion sin cambios:     {{ 'SI' if not idemp_2.changed else 'NO' }}
+          =====================================================================
+
+    # Limpieza
+    - name: "Limpieza"
+      ansible.controller.organization:
+        name: "{{ item }}"
+        state: absent
+      loop: ["Org-Alpha", "Org-Beta"]
+      ignore_errors: true
