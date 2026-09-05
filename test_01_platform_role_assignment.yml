@@ -12,25 +12,30 @@
       aap_validate_certs: "{{ aap_validate_certs | default(false) }}"
 
   tasks:
-    - name: "TEST 1A - Asignar permiso sobre ORGANIZACION via ansible.platform (deberia funcionar)"
+    - name: "TEST 1A - Asignar permiso sobre ORGANIZACION via ansible.platform (con assignment_objects por nombre)"
       ansible.platform.role_team_assignment:
         <<: *platform_auth
         team: "Team-Test-RBAC"
         role_definition: "Organization Member"
-        object_id: "{{ org_id }}"
+        assignment_objects:
+          - name: "Org-Test-RBAC"
+            type: "organizations"
         state: present
       register: test_1a
+      ignore_errors: true
 
     - name: "Resultado TEST 1A"
       ansible.builtin.debug:
         var: test_1a
 
-    - name: "TEST 1B - Asignar permiso sobre JOB TEMPLATE via ansible.platform (probamos si funciona)"
+    - name: "TEST 1B - Asignar permiso sobre JOB TEMPLATE via ansible.platform (probamos si acepta tipo controller)"
       ansible.platform.role_team_assignment:
         <<: *platform_auth
         team: "Team-Test-RBAC"
         role_definition: "JobTemplate Execute"
-        object_id: "{{ jt_id }}"
+        assignment_objects:
+          - name: "JT-Test-RBAC"
+            type: "job_templates"
         state: present
       register: test_1b
       ignore_errors: true
@@ -39,12 +44,14 @@
       ansible.builtin.debug:
         var: test_1b
 
-    - name: "TEST 1C - Asignar permiso sobre INVENTARIO via ansible.platform (probamos si funciona)"
+    - name: "TEST 1C - Asignar permiso sobre INVENTARIO via ansible.platform"
       ansible.platform.role_team_assignment:
         <<: *platform_auth
         team: "Team-Test-RBAC"
         role_definition: "Inventory Use"
-        object_id: "{{ inv_id }}"
+        assignment_objects:
+          - name: "Inventario-Test-RBAC"
+            type: "inventories"
         state: present
       register: test_1c
       ignore_errors: true
@@ -53,10 +60,25 @@
       ansible.builtin.debug:
         var: test_1c
 
+    - name: "TEST 1D - Intentar con object_id directo (como la API gateway acepta)"
+      ansible.platform.role_team_assignment:
+        <<: *platform_auth
+        team: "Team-Test-RBAC"
+        role_definition: "Project Use"
+        object_id: "{{ jt_id }}"
+        state: present
+      register: test_1d
+      ignore_errors: true
+
+    - name: "Resultado TEST 1D"
+      ansible.builtin.debug:
+        var: test_1d
+
     - name: "RESUMEN Pregunta 1"
       ansible.builtin.debug:
         msg: |
           === PREGUNTA 1: ansible.platform.role_team_assignment sobre objetos controller ===
-          TEST 1A (Org):       {{ 'OK' if test_1a is not failed else 'FALLO - ' + (test_1a.msg | default('')) }}
-          TEST 1B (JT):        {{ 'OK' if test_1b is not failed else 'FALLO - ' + (test_1b.msg | default('')) }}
-          TEST 1C (Inventory): {{ 'OK' if test_1c is not failed else 'FALLO - ' + (test_1c.msg | default('')) }}
+          TEST 1A (Org por nombre):           {{ 'OK' if test_1a is not failed else 'FALLO - ' + (test_1a.msg | default(''))[:100] }}
+          TEST 1B (JT por nombre):            {{ 'OK' if test_1b is not failed else 'FALLO - ' + (test_1b.msg | default(''))[:100] }}
+          TEST 1C (Inventory por nombre):     {{ 'OK' if test_1c is not failed else 'FALLO - ' + (test_1c.msg | default(''))[:100] }}
+          TEST 1D (object_id directo):        {{ 'OK' if test_1d is not failed else 'FALLO - ' + (test_1d.msg | default(''))[:100] }}
