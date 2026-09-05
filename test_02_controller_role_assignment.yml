@@ -1,0 +1,61 @@
+---
+- name: "Pregunta 2 - ansible.controller role_team_assignment con nombre vs ID"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  module_defaults:
+    group/ansible.controller.controller:
+      controller_host: "{{ aap_hostname }}"
+      controller_username: "{{ aap_username }}"
+      controller_password: "{{ aap_password }}"
+      validate_certs: "{{ aap_validate_certs | default(false) }}"
+
+  tasks:
+    - name: "TEST 2A - Asignar con object_id numerico (deberia funcionar)"
+      ansible.controller.role_team_assignment:
+        team: "Team-Test-RBAC"
+        role_definition: "JobTemplate Admin"
+        object_id: "{{ jt_id }}"
+        state: present
+      register: test_2a
+      ignore_errors: true
+
+    - name: "Resultado TEST 2A"
+      ansible.builtin.debug:
+        var: test_2a
+
+    - name: "TEST 2B - Asignar con object_name por nombre (probamos si existe el parametro)"
+      ansible.controller.role_team_assignment:
+        team: "Team-Test-RBAC"
+        role_definition: "Inventory Admin"
+        object_name: "Inventario-Test-RBAC"
+        state: present
+      register: test_2b
+      ignore_errors: true
+
+    - name: "Resultado TEST 2B"
+      ansible.builtin.debug:
+        var: test_2b
+
+    - name: "TEST 2C - Asignar con object_name + organization (probamos si existe)"
+      ansible.controller.role_team_assignment:
+        team: "Team-Test-RBAC"
+        role_definition: "Inventory Use"
+        object_name: "Inventario-Test-RBAC"
+        organization: "Org-Test-RBAC"
+        state: present
+      register: test_2c
+      ignore_errors: true
+
+    - name: "Resultado TEST 2C"
+      ansible.builtin.debug:
+        var: test_2c
+
+    - name: "RESUMEN Pregunta 2"
+      ansible.builtin.debug:
+        msg: |
+          === PREGUNTA 2: ansible.controller.role_team_assignment nombre vs ID ===
+          TEST 2A (object_id):                    {{ 'OK' if test_2a is not failed else 'FALLO - ' + (test_2a.msg | default('')) }}
+          TEST 2B (object_name sin org):           {{ 'OK' if test_2b is not failed else 'FALLO - ' + (test_2b.msg | default('')) }}
+          TEST 2C (object_name + organization):    {{ 'OK' if test_2c is not failed else 'FALLO - ' + (test_2c.msg | default('')) }}

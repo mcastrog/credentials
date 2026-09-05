@@ -1,0 +1,67 @@
+---
+- name: "Pregunta 3 - ansible.controller.role (deprecated) sigue funcionando?"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  module_defaults:
+    group/ansible.controller.controller:
+      controller_host: "{{ aap_hostname }}"
+      controller_username: "{{ aap_username }}"
+      controller_password: "{{ aap_password }}"
+      validate_certs: "{{ aap_validate_certs | default(false) }}"
+
+  tasks:
+    - name: "TEST 3A - Asignar rol POR NOMBRE con ansible.controller.role (el deprecated)"
+      ansible.controller.role:
+        team: "Team-Test-RBAC"
+        role: "execute"
+        job_templates:
+          - "JT-Test-RBAC"
+        lookup_organization: "Org-Test-RBAC"
+        state: present
+      register: test_3a
+      ignore_errors: true
+
+    - name: "Resultado TEST 3A"
+      ansible.builtin.debug:
+        var: test_3a
+
+    - name: "TEST 3B - Asignar rol de inventario POR NOMBRE (deprecated)"
+      ansible.controller.role:
+        team: "Team-Test-RBAC"
+        role: "use"
+        inventories:
+          - "Inventario-Test-RBAC"
+        lookup_organization: "Org-Test-RBAC"
+        state: present
+      register: test_3b
+      ignore_errors: true
+
+    - name: "Resultado TEST 3B"
+      ansible.builtin.debug:
+        var: test_3b
+
+    - name: "TEST 3C - Asignar rol de proyecto POR NOMBRE a USUARIO (deprecated)"
+      ansible.controller.role:
+        user: "user-test-rbac"
+        role: "use"
+        projects:
+          - "Proyecto-Test-RBAC"
+        lookup_organization: "Org-Test-RBAC"
+        state: present
+      register: test_3c
+      ignore_errors: true
+
+    - name: "Resultado TEST 3C"
+      ansible.builtin.debug:
+        var: test_3c
+
+    - name: "RESUMEN Pregunta 3"
+      ansible.builtin.debug:
+        msg: |
+          === PREGUNTA 3: ansible.controller.role (deprecated) funciona? ===
+          TEST 3A (JT execute por nombre):     {{ 'OK' if test_3a is not failed else 'FALLO - ' + (test_3a.msg | default('')) }}
+          TEST 3B (Inv use por nombre):        {{ 'OK' if test_3b is not failed else 'FALLO - ' + (test_3b.msg | default('')) }}
+          TEST 3C (Project use a usuario):     {{ 'OK' if test_3c is not failed else 'FALLO - ' + (test_3c.msg | default('')) }}
+          NOTA: Si funciona, indica que la API vieja sigue activa pero con deprecation warning.

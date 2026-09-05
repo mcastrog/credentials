@@ -1,0 +1,53 @@
+---
+- name: "Cleanup - Eliminar objetos de prueba RBAC"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  module_defaults:
+    group/ansible.controller.controller:
+      controller_host: "{{ aap_hostname }}"
+      controller_username: "{{ aap_username }}"
+      controller_password: "{{ aap_password }}"
+      validate_certs: "{{ aap_validate_certs | default(false) }}"
+
+  tasks:
+    - name: Eliminar job template de prueba
+      ansible.controller.job_template:
+        name: "JT-Test-RBAC"
+        organization: "Org-Test-RBAC"
+        state: absent
+      ignore_errors: true
+
+    - name: Eliminar proyecto de prueba
+      ansible.controller.project:
+        name: "Proyecto-Test-RBAC"
+        organization: "Org-Test-RBAC"
+        state: absent
+      ignore_errors: true
+
+    - name: Eliminar inventario de prueba
+      ansible.controller.inventory:
+        name: "Inventario-Test-RBAC"
+        organization: "Org-Test-RBAC"
+        state: absent
+      ignore_errors: true
+
+    - name: Eliminar team de prueba
+      ansible.controller.team:
+        name: "Team-Test-RBAC"
+        organization: "Org-Test-RBAC"
+        state: absent
+      ignore_errors: true
+
+    - name: Eliminar usuario de prueba
+      ansible.controller.user:
+        username: "user-test-rbac"
+        state: absent
+      ignore_errors: true
+
+    - name: Eliminar organizacion de prueba
+      ansible.controller.organization:
+        name: "Org-Test-RBAC"
+        state: absent
+      ignore_errors: true

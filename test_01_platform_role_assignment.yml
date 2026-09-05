@@ -1,0 +1,59 @@
+---
+- name: "Pregunta 1 - ansible.platform role_team_assignment sobre objetos controller"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  module_defaults:
+    group/ansible.platform.aap:
+      aap_hostname: "{{ aap_hostname }}"
+      aap_username: "{{ aap_username }}"
+      aap_password: "{{ aap_password }}"
+      aap_validate_certs: "{{ aap_validate_certs | default(false) }}"
+
+  tasks:
+    - name: "TEST 1A - Asignar permiso sobre ORGANIZACION via ansible.platform (deberia funcionar)"
+      ansible.platform.role_team_assignment:
+        team: "Team-Test-RBAC"
+        role_definition: "Organization Member"
+        object_id: "{{ org_id }}"
+        state: present
+      register: test_1a
+
+    - name: "Resultado TEST 1A"
+      ansible.builtin.debug:
+        var: test_1a
+
+    - name: "TEST 1B - Asignar permiso sobre JOB TEMPLATE via ansible.platform (probamos si funciona)"
+      ansible.platform.role_team_assignment:
+        team: "Team-Test-RBAC"
+        role_definition: "JobTemplate Execute"
+        object_id: "{{ jt_id }}"
+        state: present
+      register: test_1b
+      ignore_errors: true
+
+    - name: "Resultado TEST 1B"
+      ansible.builtin.debug:
+        var: test_1b
+
+    - name: "TEST 1C - Asignar permiso sobre INVENTARIO via ansible.platform (probamos si funciona)"
+      ansible.platform.role_team_assignment:
+        team: "Team-Test-RBAC"
+        role_definition: "Inventory Use"
+        object_id: "{{ inv_id }}"
+        state: present
+      register: test_1c
+      ignore_errors: true
+
+    - name: "Resultado TEST 1C"
+      ansible.builtin.debug:
+        var: test_1c
+
+    - name: "RESUMEN Pregunta 1"
+      ansible.builtin.debug:
+        msg: |
+          === PREGUNTA 1: ansible.platform.role_team_assignment sobre objetos controller ===
+          TEST 1A (Org):       {{ 'OK' if test_1a is not failed else 'FALLO - ' + (test_1a.msg | default('')) }}
+          TEST 1B (JT):        {{ 'OK' if test_1b is not failed else 'FALLO - ' + (test_1b.msg | default('')) }}
+          TEST 1C (Inventory): {{ 'OK' if test_1c is not failed else 'FALLO - ' + (test_1c.msg | default('')) }}

@@ -1,0 +1,73 @@
+---
+- name: "Setup - Crear objetos de prueba para tests RBAC"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  module_defaults:
+    group/ansible.controller.controller:
+      controller_host: "{{ aap_hostname }}"
+      controller_username: "{{ aap_username }}"
+      controller_password: "{{ aap_password }}"
+      validate_certs: "{{ aap_validate_certs | default(false) }}"
+
+  tasks:
+    - name: Crear organizacion de prueba
+      ansible.controller.organization:
+        name: "Org-Test-RBAC"
+        state: present
+
+    - name: Crear team de prueba
+      ansible.controller.team:
+        name: "Team-Test-RBAC"
+        organization: "Org-Test-RBAC"
+        state: present
+
+    - name: Crear usuario de prueba
+      ansible.controller.user:
+        username: "user-test-rbac"
+        password: "password123!"
+        email: "test@example.com"
+        state: present
+
+    - name: Crear inventario de prueba
+      ansible.controller.inventory:
+        name: "Inventario-Test-RBAC"
+        organization: "Org-Test-RBAC"
+        state: present
+
+    - name: Crear proyecto de prueba
+      ansible.controller.project:
+        name: "Proyecto-Test-RBAC"
+        organization: "Org-Test-RBAC"
+        scm_type: git
+        scm_url: "https://github.com/ansible/ansible-tower-samples.git"
+        state: present
+
+    - name: Esperar a que el proyecto sincronice
+      ansible.controller.project:
+        name: "Proyecto-Test-RBAC"
+        organization: "Org-Test-RBAC"
+        wait: true
+      register: project_sync
+      ignore_errors: true
+
+    - name: Crear job template de prueba
+      ansible.controller.job_template:
+        name: "JT-Test-RBAC"
+        organization: "Org-Test-RBAC"
+        project: "Proyecto-Test-RBAC"
+        playbook: "hello_world.yml"
+        inventory: "Inventario-Test-RBAC"
+        state: present
+
+    - name: Resumen de objetos creados
+      ansible.builtin.debug:
+        msg: |
+          Objetos creados para pruebas RBAC:
+          - Org: Org-Test-RBAC
+          - Team: Team-Test-RBAC
+          - User: user-test-rbac
+          - Inventory: Inventario-Test-RBAC
+          - Project: Proyecto-Test-RBAC
+          - JT: JT-Test-RBAC
