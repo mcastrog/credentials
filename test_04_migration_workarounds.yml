@@ -1,0 +1,211 @@
+---
+- name: "Alternativas de migracion - workarounds para no usar ansible.controller.role"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  module_defaults:
+    group/ansible.controller.controller:
+      controller_host: "{{ aap_hostname }}"
+      controller_username: "{{ aap_username }}"
+      controller_password: "{{ aap_password }}"
+      validate_certs: "{{ aap_validate_certs | default(false) }}"
+
+  vars:
+    platform_auth: &platform_auth
+      aap_hostname: "{{ aap_hostname }}"
+      aap_username: "{{ aap_username }}"
+      aap_password: "{{ aap_password }}"
+      aap_validate_certs: "{{ aap_validate_certs | default(false) }}"
+
+  tasks:
+    # ==========================================================================
+    # WORKAROUND A: Resolver nombre a ID con lookup y luego usar role_team_assignment
+    # ==========================================================================
+    - name: "WORKAROUND A - Paso 1: Resolver JT por nombre a ID"
+      ansible.controller.job_template:
+        name: "JT-Test-RBAC"
+        organization: "Org-Test-RBAC"
+        project: "Proyecto-Test-RBAC"
+        playbook: "hello_world.yml"
+        inventory: "Inventario-Test-RBAC"
+        state: present
+      register: jt_lookup
+
+    - name: "WORKAROUND A - Mostrar ID resuelto"
+      ansible.builtin.debug:
+        msg: "JT-Test-RBAC tiene ID: {{ jt_lookup.id }}"
+
+    - name: "WORKAROUND A - Paso 2: Asignar rol usando el ID resuelto"
+      ansible.controller.role_team_assignment:
+        team: "Team-Test-RBAC"
+        role_definition: "JobTemplate Execute"
+        object_id: "{{ jt_lookup.id }}"
+        state: present
+      register: workaround_a
+      ignore_errors: true
+
+    - name: "Resultado WORKAROUND A"
+      ansible.builtin.debug:
+        msg: "Workaround A (lookup + assign): {{ 'OK' if workaround_a is not failed else 'FALLO - ' + workaround_a.msg }}"
+
+    # ==========================================================================
+    # WORKAROUND B: Usar controller_api lookup plugin para resolver
+    # ==========================================================================
+    - name: "WORKAROUND B - Resolver inventario por nombre via API lookup"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/inventories/?name=Inventario-Test-RBAC&organization__name=Org-Test-RBAC"
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+      register: inv_api_lookup
+
+    - name: "WORKAROUND B - ID resuelto via API"
+      ansible.builtin.debug:
+        msg: "Inventario-Test-RBAC tiene ID: {{ inv_api_lookup.json.results[0].id }}"
+
+    - name: "WORKAROUND B - Asignar rol con ID resuelto via API"
+      ansible.controller.role_team_assignment:
+        team: "Team-Test-RBAC"
+        role_definition: "Inventory Admin"
+        object_id: "{{ inv_api_lookup.json.results[0].id }}"
+        state: present
+      register: workaround_b
+      ignore_errors: true
+
+    - name: "Resultado WORKAROUND B"
+      ansible.builtin.debug:
+        msg: "Workaround B (API lookup + assign): {{ 'OK' if workaround_b is not failed else 'FALLO - ' + workaround_b.msg }}"
+
+    # ==========================================================================
+    # WORKAROUND C: role_user_assignment (no solo teams)
+    # ==========================================================================
+    - name: "WORKAROUND C - role_user_assignment con object_id"
+      ansible.controller.role_user_assignment:
+        user: "user-test-rbac"
+        role_definition: "JobTemplate Execute"
+        object_id: "{{ jt_lookup.id }}"
+        state: present
+      register: workaround_c
+      ignore_errors: true
+
+    - name: "Resultado WORKAROUND C"
+      ansible.builtin.debug:
+        msg: "role_user_assignment: {{ 'OK' if workaround_c is not failed else 'FALLO - ' + workaround_c.msg }}"
+
+    - name: "WORKAROUND C2 - role_user_assignment con object_name (probamos)"
+      ansible.controller.role_user_assignment:
+        user: "user-test-rbac"
+        role_definition: "Inventory Use"
+        object_name: "Inventario-Test-RBAC"
+        state: present
+      register: workaround_c2
+      ignore_errors: true
+
+    - name: "Resultado WORKAROUND C2"
+      ansible.builtin.debug:
+        msg: "role_user_assignment con object_name: {{ 'OK' if workaround_c2 is not failed else 'FALLO - ' + workaround_c2.msg }}"
+
+    # ==========================================================================
+    # WORKAROUND D: Usar ansible.platform para TODA la RBAC via gateway
+    # con assignment_objects
+    # ==========================================================================
+    - name: "WORKAROUND D - platform.role_team_assignment para org (funciona)"
+      ansible.platform.role_team_assignment:
+        <<: *platform_auth
+        team: "Team-Test-RBAC"
+        role_definition: "Organization Admin"
+        assignment_objects:
+          - name: "Org-Test-RBAC"
+            type: "organizations"
+        state: present
+      register: workaround_d1
+      ignore_errors: true
+
+    - name: "WORKAROUND D2 - platform.role_user_assignment para org"
+      ansible.platform.role_user_assignment:
+        <<: *platform_auth
+        user: "user-test-rbac"
+        role_definition: "Organization Member"
+        assignment_objects:
+          - name: "Org-Test-RBAC"
+            type: "organizations"
+        state: present
+      register: workaround_d2
+      ignore_errors: true
+
+    - name: "Resultado WORKAROUND D"
+      ansible.builtin.debug:
+        msg: |
+          platform.role_team_assignment (org):  {{ 'OK' if workaround_d1 is not failed else 'FALLO - ' + workaround_d1.msg[:100] }}
+          platform.role_user_assignment (org):  {{ 'OK' if workaround_d2 is not failed else 'FALLO - ' + workaround_d2.msg[:100] }}
+
+    # ==========================================================================
+    # WORKAROUND E: Patron generico reutilizable - resolver nombre + asignar
+    # ==========================================================================
+    - name: "WORKAROUND E - Patron generico con lista de asignaciones"
+      vars:
+        rbac_assignments:
+          - resource_type: "job_templates"
+            resource_name: "JT-Test-RBAC"
+            org_filter: "Org-Test-RBAC"
+            role_def: "JobTemplate Admin"
+            team: "Team-Test-RBAC"
+          - resource_type: "inventories"
+            resource_name: "Inventario-Test-RBAC"
+            org_filter: "Org-Test-RBAC"
+            role_def: "Inventory Use"
+            team: "Team-Test-RBAC"
+      block:
+        - name: "E1 - Resolver IDs de los recursos por nombre"
+          ansible.builtin.uri:
+            url: "{{ aap_hostname }}/api/controller/v2/{{ item.resource_type }}/?name={{ item.resource_name | urlencode }}&organization__name={{ item.org_filter | urlencode }}"
+            user: "{{ aap_username }}"
+            password: "{{ aap_password }}"
+            validate_certs: false
+            force_basic_auth: true
+          register: resolved_resources
+          loop: "{{ rbac_assignments }}"
+
+        - name: "E2 - Asignar roles usando IDs resueltos"
+          ansible.controller.role_team_assignment:
+            team: "{{ item.item.team }}"
+            role_definition: "{{ item.item.role_def }}"
+            object_id: "{{ item.json.results[0].id }}"
+            state: present
+          loop: "{{ resolved_resources.results }}"
+          register: workaround_e
+
+        - name: "Resultado WORKAROUND E"
+          ansible.builtin.debug:
+            msg: "Patron generico ({{ item.item.item.resource_name }}): {{ 'OK' if item is not failed else 'FALLO' }}"
+          loop: "{{ workaround_e.results }}"
+
+    # ==========================================================================
+    # RESUMEN FINAL
+    # ==========================================================================
+    - name: "RESUMEN ALTERNATIVAS DE MIGRACION"
+      ansible.builtin.debug:
+        msg: |
+          === ALTERNATIVAS PARA MIGRAR DESDE ansible.controller.role (deprecated) ===
+
+          WORKAROUND A (module lookup + assign):     {{ 'OK' if workaround_a is not failed else 'FALLO' }}
+            > Usar el modulo del recurso (job_template, inventory...) para obtener el ID,
+            > luego role_team_assignment con ese ID
+
+          WORKAROUND B (API uri lookup + assign):    {{ 'OK' if workaround_b is not failed else 'FALLO' }}
+            > Consultar la API con ansible.builtin.uri filtrando por nombre + org,
+            > luego role_team_assignment con el ID devuelto
+
+          WORKAROUND C (role_user_assignment ID):    {{ 'OK' if workaround_c is not failed else 'FALLO' }}
+          WORKAROUND C2 (role_user_assignment name): {{ 'OK' if workaround_c2 is not failed else 'FALLO' }}
+            > Mismo patron pero para usuarios en vez de teams
+
+          WORKAROUND D (platform para orgs/teams):   {{ 'OK' if workaround_d1 is not failed else 'FALLO' }}
+            > ansible.platform SI acepta nombres via assignment_objects
+            > pero SOLO para organizaciones y teams
+
+          WORKAROUND E (patron generico reutilizable): probado arriba
+            > Define asignaciones como datos (nombre + org + rol + team)
+            > Resuelve IDs automaticamente via API y asigna en bucle
