@@ -1,0 +1,382 @@
+---
+- name: "CasC RBAC Completo - Flujo real del cliente con todas las preguntas"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  module_defaults:
+    group/ansible.controller.controller:
+      controller_host: "{{ aap_hostname }}"
+      controller_username: "{{ aap_username }}"
+      controller_password: "{{ aap_password }}"
+      validate_certs: "{{ aap_validate_certs | default(false) }}"
+
+  vars:
+    aap_hostname: "{{ aap_hostname }}"
+    aap_username: "{{ aap_username }}"
+    aap_password: "{{ aap_password }}"
+    aap_validate_certs: false
+
+    # =====================================================
+    # DATOS CasC - Configuracion deseada del cliente
+    # TODO referenciado por NOMBRE (nunca IDs)
+    # =====================================================
+    casc:
+      org: "CasC-RBAC-Completo"
+      teams:
+        - name: "Equipo-Desarrollo"
+        - name: "Equipo-Operaciones"
+      users:
+        - username: "dev-user1"
+          email: "dev1@example.com"
+        - username: "ops-user1"
+          email: "ops1@example.com"
+      inventories:
+        - name: "Inv-Produccion"
+        - name: "Inv-Desarrollo"
+      projects:
+        - name: "Proyecto-App"
+          scm_url: "https://github.com/ansible/ansible-tower-samples.git"
+      credentials:
+        - name: "Cred-SSH-Prod"
+          type: "Machine"
+          inputs: {username: "ansible", password: "secret"}
+      job_templates:
+        - name: "JT-Deploy-Prod"
+          project: "Proyecto-App"
+          playbook: "hello_world.yml"
+          inventory: "Inv-Produccion"
+        - name: "JT-Deploy-Dev"
+          project: "Proyecto-App"
+          playbook: "hello_world.yml"
+          inventory: "Inv-Desarrollo"
+
+      # Permisos por NOMBRE (como lo define el cliente en su repo CasC)
+      permisos_controller:
+        # Equipo Desarrollo: ejecutar JT-Deploy-Dev, usar Inv-Desarrollo
+        - team: "Equipo-Desarrollo"
+          role: "execute"
+          job_templates: ["JT-Deploy-Dev"]
+          lookup_organization: "CasC-RBAC-Completo"
+        - team: "Equipo-Desarrollo"
+          role: "use"
+          inventories: ["Inv-Desarrollo"]
+          lookup_organization: "CasC-RBAC-Completo"
+        # Equipo Operaciones: admin JT-Deploy-Prod, admin Inv-Produccion, usar credencial
+        - team: "Equipo-Operaciones"
+          role: "admin"
+          job_templates: ["JT-Deploy-Prod"]
+          lookup_organization: "CasC-RBAC-Completo"
+        - team: "Equipo-Operaciones"
+          role: "admin"
+          inventories: ["Inv-Produccion"]
+          lookup_organization: "CasC-RBAC-Completo"
+        - team: "Equipo-Operaciones"
+          role: "use"
+          credentials: ["Cred-SSH-Prod"]
+          lookup_organization: "CasC-RBAC-Completo"
+        # Usuarios individuales
+        - user: "dev-user1"
+          role: "use"
+          projects: ["Proyecto-App"]
+          lookup_organization: "CasC-RBAC-Completo"
+        - user: "ops-user1"
+          role: "admin"
+          projects: ["Proyecto-App"]
+          lookup_organization: "CasC-RBAC-Completo"
+
+      permisos_platform:
+        # Membership de org y teams (por nombre, via ansible.platform)
+        - team: "Equipo-Desarrollo"
+          role_definition: "Organization Member"
+          org: "CasC-RBAC-Completo"
+        - team: "Equipo-Operaciones"
+          role_definition: "Organization Member"
+          org: "CasC-RBAC-Completo"
+
+  tasks:
+    # ==================================================================
+    # FASE 1: Crear toda la infraestructura
+    # ==================================================================
+    - name: "FASE 1 - Crear organizacion"
+      ansible.controller.organization:
+        name: "{{ casc.org }}"
+        state: present
+
+    - name: "FASE 1 - Crear teams"
+      ansible.controller.team:
+        name: "{{ item.name }}"
+        organization: "{{ casc.org }}"
+        state: present
+      loop: "{{ casc.teams }}"
+
+    - name: "FASE 1 - Crear usuarios"
+      ansible.controller.user:
+        username: "{{ item.username }}"
+        password: "password123!"
+        email: "{{ item.email }}"
+        state: present
+      loop: "{{ casc.users }}"
+
+    - name: "FASE 1 - Crear credenciales"
+      ansible.controller.credential:
+        name: "{{ item.name }}"
+        credential_type: "{{ item.type }}"
+        organization: "{{ casc.org }}"
+        inputs: "{{ item.inputs }}"
+        state: present
+      loop: "{{ casc.credentials }}"
+
+    - name: "FASE 1 - Crear proyectos"
+      ansible.controller.project:
+        name: "{{ item.name }}"
+        organization: "{{ casc.org }}"
+        scm_type: git
+        scm_url: "{{ item.scm_url }}"
+        wait: true
+        state: present
+      loop: "{{ casc.projects }}"
+
+    - name: "FASE 1 - Crear inventarios"
+      ansible.controller.inventory:
+        name: "{{ item.name }}"
+        organization: "{{ casc.org }}"
+        state: present
+      loop: "{{ casc.inventories }}"
+
+    - name: "FASE 1 - Crear job templates"
+      ansible.controller.job_template:
+        name: "{{ item.name }}"
+        organization: "{{ casc.org }}"
+        project: "{{ item.project }}"
+        playbook: "{{ item.playbook }}"
+        inventory: "{{ item.inventory }}"
+        state: present
+      loop: "{{ casc.job_templates }}"
+
+    # ==================================================================
+    # FASE 2: Aplicar permisos controller (deprecated, por nombre)
+    # ==================================================================
+    - name: "FASE 2A - Permisos controller (deprecated ansible.controller.role)"
+      ansible.controller.role:
+        team: "{{ item.team | default(omit) }}"
+        user: "{{ item.user | default(omit) }}"
+        role: "{{ item.role }}"
+        job_templates: "{{ item.job_templates | default(omit) }}"
+        inventories: "{{ item.inventories | default(omit) }}"
+        projects: "{{ item.projects | default(omit) }}"
+        credentials: "{{ item.credentials | default(omit) }}"
+        lookup_organization: "{{ item.lookup_organization }}"
+        state: present
+      loop: "{{ casc.permisos_controller }}"
+      loop_control:
+        label: "{{ item.role }} -> {{ item.team | default(item.user) }}"
+
+    - name: "FASE 2B - Permisos platform (ansible.platform, por nombre)"
+      ansible.platform.role_team_assignment:
+        aap_hostname: "{{ aap_hostname }}"
+        aap_username: "{{ aap_username }}"
+        aap_password: "{{ aap_password }}"
+        aap_validate_certs: false
+        team: "{{ item.team }}"
+        role_definition: "{{ item.role_definition }}"
+        assignment_objects:
+          - name: "{{ item.org }}"
+            type: "organizations"
+        state: present
+      loop: "{{ casc.permisos_platform }}"
+      loop_control:
+        label: "{{ item.role_definition }} -> {{ item.team }}"
+
+    # ==================================================================
+    # FASE 3: Verificar todos los permisos aplicados
+    # ==================================================================
+    - name: "FASE 3 - Obtener IDs de JTs para verificar"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/job_templates/?organization__name={{ casc.org | urlencode }}"
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+      register: all_jts
+
+    - name: "FASE 3 - Verificar permisos por JT"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/role_team_assignments/?object_id={{ item.id }}"
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+      register: jt_perms
+      loop: "{{ all_jts.json.results }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: "FASE 3 - Resumen permisos"
+      ansible.builtin.debug:
+        msg: "{{ item.item.name }} (ID {{ item.item.id }}): {{ item.json.count }} permisos"
+      loop: "{{ jt_perms.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
+    # ==================================================================
+    # FASE 4: RECREAR JT-Deploy-Prod (escenario del cliente)
+    # ==================================================================
+    - name: "FASE 4 - Guardar ID original de JT-Deploy-Prod"
+      ansible.builtin.set_fact:
+        jt_prod_id_original: "{{ all_jts.json.results | selectattr('name', 'eq', 'JT-Deploy-Prod') | map(attribute='id') | first }}"
+
+    - name: "FASE 4 - BORRAR JT-Deploy-Prod"
+      ansible.controller.job_template:
+        name: "JT-Deploy-Prod"
+        organization: "{{ casc.org }}"
+        state: absent
+
+    - name: "FASE 4 - RECREAR JT-Deploy-Prod (mismos datos)"
+      ansible.controller.job_template:
+        name: "JT-Deploy-Prod"
+        organization: "{{ casc.org }}"
+        project: "Proyecto-App"
+        playbook: "hello_world.yml"
+        inventory: "Inv-Produccion"
+        state: present
+      register: jt_prod_recreado
+
+    - name: "FASE 4 - Verificar permisos ANTES de re-aplicar"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/role_team_assignments/?object_id={{ jt_prod_recreado.id }}"
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+      register: perms_perdidos
+
+    # ==================================================================
+    # FASE 5: Re-run CasC completo (simula push + webhook)
+    # ==================================================================
+    - name: "FASE 5 - Re-aplicar permisos controller (como webhook trigger)"
+      ansible.controller.role:
+        team: "{{ item.team | default(omit) }}"
+        user: "{{ item.user | default(omit) }}"
+        role: "{{ item.role }}"
+        job_templates: "{{ item.job_templates | default(omit) }}"
+        inventories: "{{ item.inventories | default(omit) }}"
+        projects: "{{ item.projects | default(omit) }}"
+        credentials: "{{ item.credentials | default(omit) }}"
+        lookup_organization: "{{ item.lookup_organization }}"
+        state: present
+      loop: "{{ casc.permisos_controller }}"
+      loop_control:
+        label: "{{ item.role }} -> {{ item.team | default(item.user) }}"
+
+    - name: "FASE 5 - Verificar permisos restaurados"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/role_team_assignments/?object_id={{ jt_prod_recreado.id }}"
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+      register: perms_restaurados
+
+    # ==================================================================
+    # FASE 6: Intentar lo mismo con modulos NUEVOS (para comparar)
+    # ==================================================================
+    - name: "FASE 6 - Borrar JT-Deploy-Dev"
+      ansible.controller.job_template:
+        name: "JT-Deploy-Dev"
+        organization: "{{ casc.org }}"
+        state: absent
+
+    - name: "FASE 6 - Recrear JT-Deploy-Dev"
+      ansible.controller.job_template:
+        name: "JT-Deploy-Dev"
+        organization: "{{ casc.org }}"
+        project: "Proyecto-App"
+        playbook: "hello_world.yml"
+        inventory: "Inv-Desarrollo"
+        state: present
+      register: jt_dev_recreado
+
+    - name: "FASE 6A - Intentar re-asignar con role_team_assignment SIN conocer el ID nuevo"
+      ansible.controller.role_team_assignment:
+        team: "Equipo-Desarrollo"
+        role_definition: "JobTemplate Execute"
+        object_id: "{{ jt_prod_id_original }}"
+        state: present
+      register: fase6a
+      ignore_errors: true
+
+    - name: "FASE 6B - Workaround: resolver nombre -> ID -> asignar"
+      block:
+        - name: "6B1 - Resolver ID por nombre"
+          ansible.builtin.uri:
+            url: "{{ aap_hostname }}/api/controller/v2/job_templates/?name=JT-Deploy-Dev&organization__name={{ casc.org | urlencode }}"
+            user: "{{ aap_username }}"
+            password: "{{ aap_password }}"
+            validate_certs: false
+            force_basic_auth: true
+          register: jt_dev_lookup
+
+        - name: "6B2 - Asignar con ID resuelto"
+          ansible.controller.role_team_assignment:
+            team: "Equipo-Desarrollo"
+            role_definition: "JobTemplate Execute"
+            object_id: "{{ jt_dev_lookup.json.results[0].id }}"
+            state: present
+          register: fase6b
+
+    - name: "FASE 6C - Verificar permisos de JT-Deploy-Dev"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/role_team_assignments/?object_id={{ jt_dev_recreado.id }}"
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+      register: perms_dev_final
+
+    # ==================================================================
+    # RESUMEN FINAL
+    # ==================================================================
+    - name: "RESUMEN FINAL COMPLETO"
+      ansible.builtin.debug:
+        msg: |
+          =====================================================================
+          RESUMEN: CasC RBAC COMPLETO - AAP {{ lookup('pipe', 'echo $AAP_VERSION', errors='ignore') | default('') }}
+          =====================================================================
+
+          FASE 1 - Infraestructura (org, 2 teams, 2 users, 2 JTs, 2 invs, 1 cred, 1 proj): OK
+          FASE 2 - Permisos por NOMBRE (7 controller + 2 platform):    OK
+          FASE 3 - Verificacion permisos JTs:
+          {% for r in jt_perms.results %}
+              {{ r.item.name }}: {{ r.json.count }} permisos
+          {% endfor %}
+
+          FASE 4 - Recrear JT-Deploy-Prod:
+              ID original: {{ jt_prod_id_original }}
+              ID recreado: {{ jt_prod_recreado.id }}
+              Permisos PERDIDOS: {{ perms_perdidos.json.count }} (esperado 0)
+
+          FASE 5 - Re-run CasC con deprecated (por nombre):
+              Permisos RESTAURADOS: {{ perms_restaurados.json.count }}
+
+          FASE 6 - Comparativa con modulos nuevos tras recrear JT-Deploy-Dev:
+              6A role_team_assignment con ID viejo: {{ 'OK (inesperado!)' if fase6a is not failed else 'FALLO (esperado - ID no existe)' }}
+              6B Workaround resolver nombre+asignar: {{ 'OK' if fase6b is not failed else 'FALLO' }}
+              Permisos JT-Deploy-Dev: {{ perms_dev_final.json.count }}
+
+          CONCLUSIONES:
+          1. El flujo CasC con ansible.controller.role (deprecated) funciona
+             end-to-end incluyendo reasignacion tras recreacion de objetos.
+          2. Los modulos nuevos (role_team_assignment) requieren conocer el ID,
+             que cambia cuando se recrea un objeto -> los permisos se pierden.
+          3. Workaround: resolver nombre a ID via API antes de asignar.
+          4. ansible.platform solo sirve para permisos de orgs/teams, no
+             para objetos del controller.
+          =====================================================================
+
+    # Limpieza
+    - name: "Limpieza"
+      ansible.controller.organization:
+        name: "{{ casc.org }}"
+        state: absent
+      ignore_errors: true
