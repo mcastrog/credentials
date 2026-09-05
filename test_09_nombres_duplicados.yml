@@ -101,6 +101,22 @@
           JT-Deploy en Org-Beta:  ID {{ jt_beta.id }}
           Son diferentes: {{ jt_alpha.id != jt_beta.id }}
 
+    - name: "Resolver role_definition IDs"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/role_definitions/?name={{ item | urlencode }}"
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+      register: rd_lookups
+      loop: ["JobTemplate Admin", "JobTemplate Execute", "Inventory Use"]
+
+    - name: "Guardar role_definition IDs"
+      ansible.builtin.set_fact:
+        rd_jt_admin: "{{ rd_lookups.results[0].json.results[0].id }}"
+        rd_jt_execute: "{{ rd_lookups.results[1].json.results[0].id }}"
+        rd_inv_use: "{{ rd_lookups.results[2].json.results[0].id }}"
+
     # ==================================================================
     # FASE 2: Asignar permisos con DEPRECATED (por nombre + org)
     # ==================================================================
@@ -202,7 +218,7 @@
         body_format: json
         body:
           team: "{{ team_lookups.results[0].json.results[0].id }}"
-          role_definition: "JobTemplate Admin"
+          role_definition: "{{ rd_jt_admin }}"
           object_id: "{{ lookup_alpha.json.results[0].id }}"
         status_code: [201, 200]
       register: wk_alpha
@@ -219,7 +235,7 @@
         body_format: json
         body:
           team: "{{ team_lookups.results[1].json.results[0].id }}"
-          role_definition: "JobTemplate Admin"
+          role_definition: "{{ rd_jt_admin }}"
           object_id: "{{ lookup_beta.json.results[0].id }}"
         status_code: [201, 200]
       register: wk_beta
@@ -240,7 +256,7 @@
         body_format: json
         body:
           team: "{{ team_lookups.results[0].json.results[0].id }}"
-          role_definition: "JobTemplate Execute"
+          role_definition: "{{ rd_jt_execute }}"
           object_id: "{{ jt_alpha.id }}"
         status_code: [201, 200, 409]
       register: assign_alpha_api
@@ -257,7 +273,7 @@
         body_format: json
         body:
           team: "{{ team_lookups.results[1].json.results[0].id }}"
-          role_definition: "JobTemplate Execute"
+          role_definition: "{{ rd_jt_execute }}"
           object_id: "{{ jt_beta.id }}"
         status_code: [201, 200, 409]
       register: assign_beta_api
@@ -316,7 +332,7 @@
         body_format: json
         body:
           team: "{{ team_lookups.results[0].json.results[0].id }}"
-          role_definition: "Inventory Use"
+          role_definition: "{{ rd_inv_use }}"
           object_id: "{{ jt_alpha.id }}"
         status_code: [201, 200]
       register: idemp_1
@@ -332,7 +348,7 @@
         body_format: json
         body:
           team: "{{ team_lookups.results[0].json.results[0].id }}"
-          role_definition: "Inventory Use"
+          role_definition: "{{ rd_inv_use }}"
           object_id: "{{ jt_alpha.id }}"
         status_code: [201, 200, 409]
       register: idemp_2
