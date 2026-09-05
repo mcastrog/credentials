@@ -32,15 +32,15 @@
         name: "Org-Beta"
         state: present
 
-    - name: "Crear Team-Deploy en Org-Alpha"
+    - name: "Crear Team-Shared en Org-Alpha"
       ansible.controller.team:
-        name: "Team-Deploy"
+        name: "Team-Shared"
         organization: "Org-Alpha"
         state: present
 
-    - name: "Crear Team-Deploy en Org-Beta (MISMO NOMBRE)"
+    - name: "Crear Team-Shared en Org-Beta (MISMO NOMBRE)"
       ansible.controller.team:
-        name: "Team-Deploy"
+        name: "Team-Shared"
         organization: "Org-Beta"
         state: present
 
@@ -106,7 +106,7 @@
     # ==================================================================
     - name: "DEPRECATED - Permiso en Org-Alpha (JT-Deploy)"
       ansible.controller.role:
-        team: "Team-Deploy"
+        team: "Team-Shared"
         role: "execute"
         job_templates: ["JT-Deploy"]
         lookup_organization: "Org-Alpha"
@@ -115,7 +115,7 @@
 
     - name: "DEPRECATED - Permiso en Org-Beta (JT-Deploy)"
       ansible.controller.role:
-        team: "Team-Deploy"
+        team: "Team-Shared"
         role: "execute"
         job_templates: ["JT-Deploy"]
         lookup_organization: "Org-Beta"
@@ -173,28 +173,62 @@
           Resultados unicos Alpha: {{ lookup_alpha.json.count }} (esperado 1)
           Resultados unicos Beta:  {{ lookup_beta.json.count }} (esperado 1)
 
-    - name: "WORKAROUND - Asignar admin con ID resuelto en Alpha"
-      ansible.controller.role_team_assignment:
-        team: "Team-Deploy"
-        role_definition: "JobTemplate Admin"
-        object_id: "{{ lookup_alpha.json.results[0].id }}"
-        state: present
-      register: wk_alpha
+    - name: "WORKAROUND - Resolver Team-Shared en cada org"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/teams/?name=Team-Shared&organization__name={{ item }}"
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+      register: team_lookups
+      loop: ["Org-Alpha", "Org-Beta"]
 
-    - name: "WORKAROUND - Asignar admin con ID resuelto en Beta"
-      ansible.controller.role_team_assignment:
-        team: "Team-Deploy"
-        role_definition: "JobTemplate Admin"
-        object_id: "{{ lookup_beta.json.results[0].id }}"
-        state: present
+    - name: "WORKAROUND - Teams resueltos"
+      ansible.builtin.debug:
+        msg: |
+          Team-Shared en Org-Alpha: ID {{ team_lookups.results[0].json.results[0].id }}
+          Team-Shared en Org-Beta:  ID {{ team_lookups.results[1].json.results[0].id }}
+
+    - name: "WORKAROUND - Asignar admin con AMBOS IDs resueltos (team + object) en Alpha"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/role_team_assignments/"
+        method: POST
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+        body_format: json
+        body:
+          team: "{{ team_lookups.results[0].json.results[0].id }}"
+          role_definition: "JobTemplate Admin"
+          object_id: "{{ lookup_alpha.json.results[0].id }}"
+        status_code: [201, 200]
+      register: wk_alpha
+      ignore_errors: true
+
+    - name: "WORKAROUND - Asignar admin con AMBOS IDs resueltos en Beta"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/role_team_assignments/"
+        method: POST
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+        body_format: json
+        body:
+          team: "{{ team_lookups.results[1].json.results[0].id }}"
+          role_definition: "JobTemplate Admin"
+          object_id: "{{ lookup_beta.json.results[0].id }}"
+        status_code: [201, 200]
       register: wk_beta
+      ignore_errors: true
 
     # ==================================================================
     # FASE 4: Quitar permisos (state: absent)
     # ==================================================================
     - name: "ABSENT - Quitar permiso deprecated en Alpha"
       ansible.controller.role:
-        team: "Team-Deploy"
+        team: "Team-Shared"
         role: "execute"
         job_templates: ["JT-Deploy"]
         lookup_organization: "Org-Alpha"
@@ -227,7 +261,7 @@
     # ==================================================================
     - name: "IDEMPOTENCIA - Asignar permiso (primera vez)"
       ansible.controller.role:
-        team: "Team-Deploy"
+        team: "Team-Shared"
         role: "use"
         inventories: ["Inv-Alpha"]
         lookup_organization: "Org-Alpha"
@@ -236,7 +270,7 @@
 
     - name: "IDEMPOTENCIA - Asignar MISMO permiso (segunda vez)"
       ansible.controller.role:
-        team: "Team-Deploy"
+        team: "Team-Shared"
         role: "use"
         inventories: ["Inv-Alpha"]
         lookup_organization: "Org-Alpha"
@@ -260,10 +294,12 @@
           TEST 09: NOMBRES DUPLICADOS, ABSENT E IDEMPOTENCIA
           =====================================================================
 
-          NOMBRES DUPLICADOS (JT-Deploy en Org-Alpha y Org-Beta):
-            Deprecated (nombre + lookup_org):  {{ 'OK' if dep_alpha is not failed and dep_beta is not failed else 'FALLO' }} - asigna al JT correcto en cada org
-            Workaround (API + org filter):     {{ 'OK' if wk_alpha is not failed and wk_beta is not failed else 'FALLO' }} - resuelve ID correcto por org
+          NOMBRES DUPLICADOS (JT-Deploy y Team-Shared en Org-Alpha y Org-Beta):
+            Deprecated (nombre + lookup_org):  {{ 'OK' if dep_alpha is not failed and dep_beta is not failed else 'FALLO' }} - desambigua JT Y team correctamente
+            Workaround (API + org filter):     {{ 'OK' if wk_alpha is not failed and wk_beta is not failed else 'FALLO' }} - hay que resolver TANTO team como object por ID
             Resultados unicos por org:         Alpha={{ lookup_alpha.json.count }} Beta={{ lookup_beta.json.count }}
+            NOTA: role_team_assignment NO puede desambiguar teams con mismo nombre
+            en diferentes orgs. Hay que pasar el team ID tambien, no solo el object_id.
 
           QUITAR PERMISOS (state: absent):
             Quitar de Alpha sin afectar Beta:  {{ 'OK' if perms_absent.results[0].json.count == 0 and perms_absent.results[1].json.count > 0 else 'FALLO' }}
