@@ -62,12 +62,11 @@
         wait: true
         state: present
 
-    - name: "Crear Inventario-Prod en ambas orgs"
+    - name: "Crear Inventario-Prod en Org-Alpha"
       ansible.controller.inventory:
         name: "Inventario-Prod"
-        organization: "{{ item }}"
+        organization: "Org-Alpha"
         state: present
-      loop: ["Org-Alpha", "Org-Beta"]
 
     - name: "Crear JT-Deploy en Org-Alpha"
       ansible.controller.job_template:
@@ -78,6 +77,12 @@
         inventory: "Inventario-Prod"
         state: present
       register: jt_alpha
+
+    - name: "Crear Inventario-Prod en Org-Beta"
+      ansible.controller.inventory:
+        name: "Inventario-Prod"
+        organization: "Org-Beta"
+        state: present
 
     - name: "Crear JT-Deploy en Org-Beta (MISMO NOMBRE)"
       ansible.controller.job_template:
