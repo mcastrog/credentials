@@ -1,0 +1,115 @@
+---
+- name: "Test infra.aap_configuration - roles CasC para RBAC"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    aap_hostname: "{{ aap_hostname }}"
+    aap_username: "{{ aap_username }}"
+    aap_password: "{{ aap_password }}"
+    aap_validate_certs: "{{ aap_validate_certs | default(false) }}"
+
+  tasks:
+    # ==========================================================================
+    # TEST 6A: controller_roles (legacy, usa ansible.controller.role por debajo)
+    # ==========================================================================
+    - name: "6A - infra.aap_configuration.controller_roles (legacy, por nombre)"
+      ansible.builtin.include_role:
+        name: infra.aap_configuration.controller_roles
+      vars:
+        controller_roles:
+          - team: "Team-Test-RBAC"
+            role: "execute"
+            job_templates:
+              - "JT-Test-RBAC"
+            lookup_organization: "Org-Test-RBAC"
+            state: present
+      register: test_6a
+      ignore_errors: true
+
+    - name: "Resultado 6A"
+      ansible.builtin.debug:
+        msg: "6A controller_roles (legacy por nombre): completado"
+
+    # ==========================================================================
+    # TEST 6B: controller_role_team_assignments (nuevo, usa role_team_assignment)
+    # ==========================================================================
+    - name: "6B - Primero resolver el ID del inventario"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/inventories/?name=Inventario-Test-RBAC&organization__name=Org-Test-RBAC"
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+      register: inv_lookup
+
+    - name: "6B - infra.aap_configuration.controller_role_team_assignments (con object_id)"
+      ansible.builtin.include_role:
+        name: infra.aap_configuration.controller_role_team_assignments
+      vars:
+        controller_role_team_assignments:
+          - team: "Team-Test-RBAC"
+            role_definition: "Inventory Update"
+            object_id: "{{ inv_lookup.json.results[0].id }}"
+            state: present
+      register: test_6b
+      ignore_errors: true
+
+    - name: "Resultado 6B"
+      ansible.builtin.debug:
+        msg: "6B controller_role_team_assignments (object_id): completado"
+
+    # ==========================================================================
+    # TEST 6C: gateway_role_team_assignments (para orgs/teams)
+    # ==========================================================================
+    - name: "6C - infra.aap_configuration.gateway_role_team_assignments (por nombre)"
+      ansible.builtin.include_role:
+        name: infra.aap_configuration.gateway_role_team_assignments
+      vars:
+        gateway_role_team_assignments:
+          - team: "Team-Test-RBAC"
+            role_definition: "Organization Audit"
+            assignment_objects:
+              - name: "Org-Test-RBAC"
+                type: "organizations"
+            state: present
+      register: test_6c
+      ignore_errors: true
+
+    - name: "Resultado 6C"
+      ansible.builtin.debug:
+        msg: "6C gateway_role_team_assignments (por nombre): completado"
+
+    # ==========================================================================
+    # TEST 6D: gateway_role_user_assignments
+    # ==========================================================================
+    - name: "6D - infra.aap_configuration.gateway_role_user_assignments (por nombre)"
+      ansible.builtin.include_role:
+        name: infra.aap_configuration.gateway_role_user_assignments
+      vars:
+        gateway_role_user_assignments:
+          - user: "user-test-rbac"
+            role_definition: "Organization Audit"
+            object_ids:
+              - "Org-Test-RBAC"
+            state: present
+      register: test_6d
+      ignore_errors: true
+
+    - name: "Resultado 6D"
+      ansible.builtin.debug:
+        msg: "6D gateway_role_user_assignments (por nombre): completado"
+
+    # ==========================================================================
+    # RESUMEN
+    # ==========================================================================
+    - name: "RESUMEN infra.aap_configuration"
+      ansible.builtin.debug:
+        msg: |
+          === TESTS infra.aap_configuration ===
+          6A controller_roles (legacy por nombre):                    ejecutado
+          6B controller_role_team_assignments (con object_id):        ejecutado
+          6C gateway_role_team_assignments (por nombre orgs/teams):   ejecutado
+          6D gateway_role_user_assignments (por nombre):              ejecutado
+          NOTA: Revisar output de cada task para ver si fue OK o FALLO
