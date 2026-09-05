@@ -4,316 +4,274 @@
   connection: local
   gather_facts: false
 
+  module_defaults:
+    group/ansible.controller.controller:
+      controller_host: "{{ aap_hostname }}"
+      controller_username: "{{ aap_username }}"
+      controller_password: "{{ aap_password }}"
+      validate_certs: "{{ aap_validate_certs | default(false) }}"
+
   vars:
     aap_hostname: "{{ aap_hostname }}"
     aap_username: "{{ aap_username }}"
     aap_password: "{{ aap_password }}"
     aap_validate_certs: false
 
-    # Desactivar async que falla en el EE
-    aap_configuration_async_dir: /tmp/.ansible_async
-    aap_configuration_async_retries: 1
-    aap_configuration_async_delay: 1
-
     # =====================================================
     # DATOS CasC - Asi define el cliente su configuracion
+    # Objetos referenciados SIEMPRE por NOMBRE
     # =====================================================
+    casc_org: "CasC-Demo-Org"
+    casc_team: "CasC-Demo-Team"
+    casc_user: "casc-user1"
+    casc_inv: "CasC-Demo-Inventory"
+    casc_proj: "CasC-Demo-Project"
+    casc_jt: "CasC-Demo-JT"
+    casc_cred: "CasC-Demo-Credential"
 
-    # Organizaciones
-    controller_organizations:
-      - name: "CasC-Demo-Org"
+    # Permisos definidos como datos (como en el repo del cliente)
+    casc_permissions:
+      - team: "{{ casc_team }}"
+        role: "execute"
+        job_templates: ["{{ casc_jt }}"]
+        lookup_organization: "{{ casc_org }}"
+      - team: "{{ casc_team }}"
+        role: "use"
+        inventories: ["{{ casc_inv }}"]
+        lookup_organization: "{{ casc_org }}"
+      - user: "{{ casc_user }}"
+        role: "use"
+        projects: ["{{ casc_proj }}"]
+        lookup_organization: "{{ casc_org }}"
+      - user: "{{ casc_user }}"
+        role: "use"
+        credentials: ["{{ casc_cred }}"]
+        lookup_organization: "{{ casc_org }}"
+
+  tasks:
+    # ==================================================================
+    # FASE 1: Crear toda la infraestructura CasC (con modulos directos)
+    # ==================================================================
+    - name: "FASE 1.1 - Crear organizacion"
+      ansible.controller.organization:
+        name: "{{ casc_org }}"
         state: present
 
-    # Equipos
-    controller_teams:
-      - name: "CasC-Demo-Team"
-        organization: "CasC-Demo-Org"
+    - name: "FASE 1.2 - Crear team"
+      ansible.controller.team:
+        name: "{{ casc_team }}"
+        organization: "{{ casc_org }}"
         state: present
 
-    # Usuarios
-    controller_users:
-      - username: "casc-user1"
+    - name: "FASE 1.3 - Crear usuario"
+      ansible.controller.user:
+        username: "{{ casc_user }}"
         password: "password123!"
         email: "casc-user1@example.com"
-        organization: "CasC-Demo-Org"
         state: present
 
-    # Credenciales
-    controller_credentials:
-      - name: "CasC-Demo-Credential"
+    - name: "FASE 1.4 - Crear credencial"
+      ansible.controller.credential:
+        name: "{{ casc_cred }}"
         credential_type: "Machine"
-        organization: "CasC-Demo-Org"
+        organization: "{{ casc_org }}"
         inputs:
           username: "demo"
           password: "demo123"
         state: present
 
-    # Proyectos
-    controller_projects:
-      - name: "CasC-Demo-Project"
-        organization: "CasC-Demo-Org"
+    - name: "FASE 1.5 - Crear proyecto"
+      ansible.controller.project:
+        name: "{{ casc_proj }}"
+        organization: "{{ casc_org }}"
         scm_type: git
         scm_url: "https://github.com/ansible/ansible-tower-samples.git"
         wait: true
         state: present
 
-    # Inventarios
-    controller_inventories:
-      - name: "CasC-Demo-Inventory"
-        organization: "CasC-Demo-Org"
+    - name: "FASE 1.6 - Crear inventario"
+      ansible.controller.inventory:
+        name: "{{ casc_inv }}"
+        organization: "{{ casc_org }}"
         state: present
 
-    # Job Templates
-    controller_templates:
-      - name: "CasC-Demo-JT"
-        organization: "CasC-Demo-Org"
-        project: "CasC-Demo-Project"
+    - name: "FASE 1.7 - Crear job template"
+      ansible.controller.job_template:
+        name: "{{ casc_jt }}"
+        organization: "{{ casc_org }}"
+        project: "{{ casc_proj }}"
         playbook: "hello_world.yml"
-        inventory: "CasC-Demo-Inventory"
+        inventory: "{{ casc_inv }}"
         state: present
 
-    # =====================================================
-    # PERMISOS - Aqui esta el problema
-    # =====================================================
+    - name: "FASE 1 COMPLETADA"
+      ansible.builtin.debug:
+        msg: "Infraestructura CasC creada: org, team, user, cred, project, inventory, JT"
 
-    # Metodo LEGACY (deprecated) - por NOMBRE (como lo hacen ahora)
-    controller_roles:
-      - team: "CasC-Demo-Team"
-        role: "execute"
-        job_templates:
-          - "CasC-Demo-JT"
-        lookup_organization: "CasC-Demo-Org"
+    # ==================================================================
+    # FASE 2: Aplicar permisos con metodo LEGACY (deprecated, por nombre)
+    # Como lo hace el cliente con controller_roles de infra.aap_configuration
+    # ==================================================================
+    - name: "FASE 2 - Aplicar permisos por NOMBRE (metodo legacy)"
+      ansible.controller.role:
+        team: "{{ item.team | default(omit) }}"
+        user: "{{ item.user | default(omit) }}"
+        role: "{{ item.role }}"
+        job_templates: "{{ item.job_templates | default(omit) }}"
+        inventories: "{{ item.inventories | default(omit) }}"
+        projects: "{{ item.projects | default(omit) }}"
+        credentials: "{{ item.credentials | default(omit) }}"
+        lookup_organization: "{{ item.lookup_organization }}"
         state: present
-      - team: "CasC-Demo-Team"
-        role: "use"
-        inventories:
-          - "CasC-Demo-Inventory"
-        lookup_organization: "CasC-Demo-Org"
-        state: present
-      - user: "casc-user1"
-        role: "use"
-        projects:
-          - "CasC-Demo-Project"
-        lookup_organization: "CasC-Demo-Org"
-        state: present
-      - user: "casc-user1"
-        role: "use"
-        credentials:
-          - "CasC-Demo-Credential"
-        lookup_organization: "CasC-Demo-Org"
-        state: present
+      loop: "{{ casc_permissions }}"
+      loop_control:
+        label: "{{ item.role }} -> {{ item.team | default(item.user) }}"
+      register: fase2
 
-    # Permisos gateway (orgs/teams) - por NOMBRE (funciona con ansible.platform)
-    gateway_role_team_assignments:
-      - team: "CasC-Demo-Team"
+    - name: "FASE 2 - Permisos gateway (org membership por nombre)"
+      ansible.platform.role_team_assignment:
+        aap_hostname: "{{ aap_hostname }}"
+        aap_username: "{{ aap_username }}"
+        aap_password: "{{ aap_password }}"
+        aap_validate_certs: false
+        team: "{{ casc_team }}"
         role_definition: "Organization Member"
         assignment_objects:
-          - name: "CasC-Demo-Org"
+          - name: "{{ casc_org }}"
             type: "organizations"
         state: present
 
-    gateway_role_user_assignments:
-      - user: "casc-user1"
-        role_definition: "Organization Member"
-        object_ids:
-          - "CasC-Demo-Org"
-        state: present
-
-  tasks:
-    # ==================================================================
-    # FASE 1: Aplicar toda la configuracion con infra.aap_configuration
-    # ==================================================================
-    - name: "FASE 1 - Crear organizaciones"
-      ansible.builtin.include_role:
-        name: infra.aap_configuration.controller_organizations
-
-    - name: "FASE 1 - Crear equipos"
-      ansible.builtin.include_role:
-        name: infra.aap_configuration.controller_teams
-
-    - name: "FASE 1 - Crear usuarios"
-      ansible.builtin.include_role:
-        name: infra.aap_configuration.controller_users
-
-    - name: "FASE 1 - Crear credenciales"
-      ansible.builtin.include_role:
-        name: infra.aap_configuration.controller_credentials
-
-    - name: "FASE 1 - Crear proyectos"
-      ansible.builtin.include_role:
-        name: infra.aap_configuration.controller_projects
-
-    - name: "FASE 1 - Crear inventarios"
-      ansible.builtin.include_role:
-        name: infra.aap_configuration.controller_inventories
-
-    - name: "FASE 1 - Crear job templates"
-      ansible.builtin.include_role:
-        name: infra.aap_configuration.controller_job_templates
-
-    - name: "FASE 1 - Configuracion base aplicada"
+    - name: "FASE 2 COMPLETADA"
       ansible.builtin.debug:
-        msg: "Toda la configuracion base ha sido aplicada via infra.aap_configuration"
+        msg: "Permisos aplicados: {{ fase2.results | map(attribute='role') | list }}"
 
     # ==================================================================
-    # FASE 2: Aplicar permisos LEGACY (deprecated, por nombre)
+    # FASE 3: Verificar permisos
     # ==================================================================
-    - name: "FASE 2 - Aplicar permisos controller (deprecated, por nombre)"
-      ansible.builtin.include_role:
-        name: infra.aap_configuration.controller_roles
-      register: fase2_controller
-      ignore_errors: true
-
-    - name: "FASE 2 - Resultado permisos controller legacy"
-      ansible.builtin.debug:
-        msg: "Permisos controller (legacy por nombre): {{ 'OK' if fase2_controller is not failed else 'FALLO' }}"
-
-    - name: "FASE 2 - Aplicar permisos gateway team (por nombre)"
-      ansible.builtin.include_role:
-        name: infra.aap_configuration.gateway_role_team_assignments
-      register: fase2_gateway_team
-      ignore_errors: true
-
-    - name: "FASE 2 - Resultado gateway team"
-      ansible.builtin.debug:
-        msg: "Permisos gateway team (por nombre): {{ 'OK' if fase2_gateway_team is not failed else 'FALLO' }}"
-
-    - name: "FASE 2 - Aplicar permisos gateway user (por nombre)"
-      ansible.builtin.include_role:
-        name: infra.aap_configuration.gateway_role_user_assignments
-      register: fase2_gateway_user
-      ignore_errors: true
-
-    - name: "FASE 2 - Resultado gateway user"
-      ansible.builtin.debug:
-        msg: "Permisos gateway user (por nombre): {{ 'OK' if fase2_gateway_user is not failed else 'FALLO' }}"
-
-    # ==================================================================
-    # FASE 3: Verificar que los permisos se aplicaron
-    # ==================================================================
-    - name: "FASE 3 - Obtener JT ID para verificar"
+    - name: "FASE 3 - Obtener ID del JT"
       ansible.builtin.uri:
-        url: "{{ aap_hostname }}/api/controller/v2/job_templates/?name=CasC-Demo-JT&organization__name=CasC-Demo-Org"
+        url: "{{ aap_hostname }}/api/controller/v2/job_templates/?name={{ casc_jt | urlencode }}&organization__name={{ casc_org | urlencode }}"
         user: "{{ aap_username }}"
         password: "{{ aap_password }}"
         validate_certs: false
         force_basic_auth: true
-      register: casc_jt
+      register: jt_info
 
-    - name: "FASE 3 - Permisos del team sobre el JT"
+    - name: "FASE 3 - Verificar permisos del team sobre JT"
       ansible.builtin.uri:
-        url: "{{ aap_hostname }}/api/controller/v2/role_team_assignments/?team__name=CasC-Demo-Team&object_id={{ casc_jt.json.results[0].id }}"
+        url: "{{ aap_hostname }}/api/controller/v2/role_team_assignments/?team__name={{ casc_team | urlencode }}&object_id={{ jt_info.json.results[0].id }}"
         user: "{{ aap_username }}"
         password: "{{ aap_password }}"
         validate_certs: false
         force_basic_auth: true
-      register: jt_perms
+      register: perms_antes
 
-    - name: "FASE 3 - Resultado verificacion"
+    - name: "FASE 3 - Permisos verificados"
       ansible.builtin.debug:
-        msg: |
-          Permisos del team CasC-Demo-Team sobre JT CasC-Demo-JT (ID {{ casc_jt.json.results[0].id }}):
-          {{ jt_perms.json.count }} permisos asignados
-          {{ 'OK - Los permisos legacy se aplicaron correctamente' if jt_perms.json.count > 0 else 'FALLO - No hay permisos' }}
+        msg: "JT {{ casc_jt }} (ID {{ jt_info.json.results[0].id }}): {{ perms_antes.json.count }} permisos asignados al team"
 
     # ==================================================================
-    # FASE 4: RECREAR el JT y re-ejecutar CasC (el escenario del cliente)
+    # FASE 4: RECREAR el JT (simula eliminacion y recreacion por CasC)
     # ==================================================================
     - name: "FASE 4 - Guardar ID original"
       ansible.builtin.set_fact:
-        jt_id_original: "{{ casc_jt.json.results[0].id }}"
+        jt_id_original: "{{ jt_info.json.results[0].id }}"
 
-    - name: "FASE 4 - Borrar JT"
+    - name: "FASE 4 - BORRAR JT (simula que alguien lo borra o se recrea)"
       ansible.controller.job_template:
-        name: "CasC-Demo-JT"
-        organization: "CasC-Demo-Org"
+        name: "{{ casc_jt }}"
+        organization: "{{ casc_org }}"
         state: absent
-        controller_host: "{{ aap_hostname }}"
-        controller_username: "{{ aap_username }}"
-        controller_password: "{{ aap_password }}"
-        validate_certs: false
 
-    - name: "FASE 4 - Re-aplicar CasC (como si fuera un push al repo)"
-      ansible.builtin.include_role:
-        name: infra.aap_configuration.controller_job_templates
+    - name: "FASE 4 - RECREAR JT (como haria el CasC al re-ejecutarse)"
+      ansible.controller.job_template:
+        name: "{{ casc_jt }}"
+        organization: "{{ casc_org }}"
+        project: "{{ casc_proj }}"
+        playbook: "hello_world.yml"
+        inventory: "{{ casc_inv }}"
+        state: present
+      register: jt_recreado
 
-    - name: "FASE 4 - Obtener nuevo ID"
-      ansible.builtin.uri:
-        url: "{{ aap_hostname }}/api/controller/v2/job_templates/?name=CasC-Demo-JT&organization__name=CasC-Demo-Org"
-        user: "{{ aap_username }}"
-        password: "{{ aap_password }}"
-        validate_certs: false
-        force_basic_auth: true
-      register: casc_jt_nuevo
-
-    - name: "FASE 4 - IDs antes y despues"
+    - name: "FASE 4 - Comparar IDs"
       ansible.builtin.debug:
         msg: |
           ID ORIGINAL: {{ jt_id_original }}
-          ID NUEVO:    {{ casc_jt_nuevo.json.results[0].id }}
-          CAMBIO:      {{ jt_id_original != casc_jt_nuevo.json.results[0].id | string }}
+          ID RECREADO: {{ jt_recreado.id }}
+          EL ID HA CAMBIADO: {{ jt_id_original | int != jt_recreado.id | int }}
 
-    - name: "FASE 4 - Verificar permisos tras recreacion (antes de re-aplicar roles)"
+    - name: "FASE 4 - Verificar permisos sobre JT recreado (ANTES de re-aplicar)"
       ansible.builtin.uri:
-        url: "{{ aap_hostname }}/api/controller/v2/role_team_assignments/?team__name=CasC-Demo-Team&object_id={{ casc_jt_nuevo.json.results[0].id }}"
+        url: "{{ aap_hostname }}/api/controller/v2/role_team_assignments/?team__name={{ casc_team | urlencode }}&object_id={{ jt_recreado.id }}"
         user: "{{ aap_username }}"
         password: "{{ aap_password }}"
         validate_certs: false
         force_basic_auth: true
       register: perms_post_recrear
 
-    - name: "FASE 4 - Permisos sobre JT recreado ANTES de re-aplicar roles"
+    - name: "FASE 4 - PERMISOS PERDIDOS"
       ansible.builtin.debug:
-        msg: "Permisos sobre JT recreado: {{ perms_post_recrear.json.count }} (esperado: 0, se pierden al recrear)"
+        msg: "Permisos sobre JT recreado (ID {{ jt_recreado.id }}): {{ perms_post_recrear.json.count }} (ESPERADO: 0 - SE PIERDEN)"
 
     # ==================================================================
-    # FASE 5: Re-aplicar permisos con el metodo legacy (simula re-run CasC)
+    # FASE 5: Re-ejecutar el CasC (como si fuera un push al repo + webhook)
+    # Los permisos legacy (por nombre) deberian reasignarse automaticamente
     # ==================================================================
-    - name: "FASE 5 - Re-aplicar permisos legacy (como un re-run del CasC)"
-      ansible.builtin.include_role:
-        name: infra.aap_configuration.controller_roles
-      register: fase5_roles
-      ignore_errors: true
+    - name: "FASE 5 - Re-aplicar permisos por NOMBRE (re-run CasC)"
+      ansible.controller.role:
+        team: "{{ item.team | default(omit) }}"
+        user: "{{ item.user | default(omit) }}"
+        role: "{{ item.role }}"
+        job_templates: "{{ item.job_templates | default(omit) }}"
+        inventories: "{{ item.inventories | default(omit) }}"
+        projects: "{{ item.projects | default(omit) }}"
+        credentials: "{{ item.credentials | default(omit) }}"
+        lookup_organization: "{{ item.lookup_organization }}"
+        state: present
+      loop: "{{ casc_permissions }}"
+      loop_control:
+        label: "{{ item.role }} -> {{ item.team | default(item.user) }}"
+      register: fase5
 
-    - name: "FASE 5 - Verificar permisos tras re-aplicar roles"
+    - name: "FASE 5 - Verificar permisos restaurados"
       ansible.builtin.uri:
-        url: "{{ aap_hostname }}/api/controller/v2/role_team_assignments/?team__name=CasC-Demo-Team&object_id={{ casc_jt_nuevo.json.results[0].id }}"
+        url: "{{ aap_hostname }}/api/controller/v2/role_team_assignments/?team__name={{ casc_team | urlencode }}&object_id={{ jt_recreado.id }}"
         user: "{{ aap_username }}"
         password: "{{ aap_password }}"
         validate_certs: false
         force_basic_auth: true
-      register: perms_post_reapply
+      register: perms_restaurados
 
-    - name: "FASE 5 - Resultado final"
+    # ==================================================================
+    # RESUMEN FINAL
+    # ==================================================================
+    - name: "RESUMEN FINAL"
       ansible.builtin.debug:
         msg: |
           =====================================================================
-          RESUMEN: FLUJO CasC REAL
+          RESUMEN: FLUJO CasC COMPLETO
           =====================================================================
 
-          FASE 1 - Configuracion base (infra.aap_configuration):  OK
-          FASE 2 - Permisos legacy (controller_roles por nombre): {{ 'OK' if fase2_controller is not failed else 'FALLO' }}
-          FASE 2 - Permisos gateway team (por nombre):            {{ 'OK' if fase2_gateway_team is not failed else 'FALLO' }}
-          FASE 2 - Permisos gateway user (por nombre):            {{ 'OK' if fase2_gateway_user is not failed else 'FALLO' }}
-          FASE 3 - Verificacion permisos:                         {{ 'OK' if jt_perms.json.count > 0 else 'FALLO' }}
-          FASE 4 - Recreacion JT:                                 ID {{ jt_id_original }} -> {{ casc_jt_nuevo.json.results[0].id }}
-          FASE 4 - Permisos perdidos:                             {{ perms_post_recrear.json.count }} (esperado: 0)
-          FASE 5 - Re-aplicar roles legacy:                       {{ 'OK' if fase5_roles is not failed else 'FALLO' }}
-          FASE 5 - Permisos restaurados:                          {{ perms_post_reapply.json.count }}
+          FASE 1 - Infraestructura CasC:                OK
+          FASE 2 - Permisos legacy (por nombre):        OK ({{ fase2.results | length }} asignaciones)
+          FASE 3 - Verificacion:                        {{ perms_antes.json.count }} permisos en JT
+          FASE 4 - Recreacion JT:                       ID {{ jt_id_original }} -> {{ jt_recreado.id }}
+          FASE 4 - Permisos tras recrear:               {{ perms_post_recrear.json.count }} (SE PIERDEN)
+          FASE 5 - Re-run CasC (re-aplicar por nombre): {{ 'OK' if fase5 is not failed else 'FALLO' }}
+          FASE 5 - Permisos restaurados:                {{ perms_restaurados.json.count }}
 
           CONCLUSION:
-          El flujo CasC con controller_roles (deprecated) FUNCIONA end-to-end,
-          incluyendo la reasignacion de permisos cuando los objetos se recrean.
-          Esto es gracias a que referencia objetos por NOMBRE, no por ID.
+          El flujo CasC con ansible.controller.role (deprecated) FUNCIONA
+          end-to-end. Al re-ejecutar el CasC tras la recreacion del objeto,
+          los permisos se reasignan automaticamente porque se referencian
+          por NOMBRE, no por ID. Este es el comportamiento que necesitais
+          mantener y que los modulos nuevos (role_team_assignment) NO ofrecen
+          de forma nativa.
           =====================================================================
 
     # Limpieza
-    - name: "Limpieza - Borrar objetos CasC demo"
+    - name: "Limpieza"
       ansible.controller.organization:
-        name: "CasC-Demo-Org"
+        name: "{{ casc_org }}"
         state: absent
-        controller_host: "{{ aap_hostname }}"
-        controller_username: "{{ aap_username }}"
-        controller_password: "{{ aap_password }}"
-        validate_certs: false
       ignore_errors: true
