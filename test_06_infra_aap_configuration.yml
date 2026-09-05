@@ -18,6 +18,7 @@
       ansible.builtin.include_role:
         name: infra.aap_configuration.controller_roles
       vars:
+        aap_configuration_async_retries: 0
         controller_roles:
           - team: "Team-Test-RBAC"
             role: "execute"

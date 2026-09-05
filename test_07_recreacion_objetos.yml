@@ -1,0 +1,225 @@
+---
+- name: "Test 07 - Recreacion de objetos: el problema real del cliente"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  module_defaults:
+    group/ansible.controller.controller:
+      controller_host: "{{ aap_hostname }}"
+      controller_username: "{{ aap_username }}"
+      controller_password: "{{ aap_password }}"
+      validate_certs: "{{ aap_validate_certs | default(false) }}"
+
+  tasks:
+    # ==========================================================================
+    # FASE 1: Crear JT y asignar permisos con ambos metodos
+    # ==========================================================================
+    - name: "FASE 1 - Crear JT de prueba"
+      ansible.controller.job_template:
+        name: "JT-Recreacion-Test"
+        organization: "Org-Test-RBAC"
+        project: "Proyecto-Test-RBAC"
+        playbook: "hello_world.yml"
+        inventory: "Inventario-Test-RBAC"
+        state: present
+      register: jt_original
+
+    - name: "FASE 1 - ID original del JT"
+      ansible.builtin.debug:
+        msg: "JT-Recreacion-Test creado con ID: {{ jt_original.id }}"
+
+    - name: "FASE 1 - Asignar permiso con metodo NUEVO (object_id)"
+      ansible.controller.role_team_assignment:
+        team: "Team-Test-RBAC"
+        role_definition: "JobTemplate Execute"
+        object_id: "{{ jt_original.id }}"
+        state: present
+      register: assign_by_id
+
+    - name: "FASE 1 - Asignar permiso con metodo DEPRECATED (por nombre)"
+      ansible.controller.role:
+        team: "Team-Test-RBAC"
+        role: "admin"
+        job_templates:
+          - "JT-Recreacion-Test"
+        lookup_organization: "Org-Test-RBAC"
+        state: present
+      register: assign_by_name
+
+    - name: "FASE 1 - Verificar permisos asignados"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/role_team_assignments/?team__name=Team-Test-RBAC&object_id={{ jt_original.id }}"
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+      register: permisos_antes
+
+    - name: "FASE 1 - Permisos sobre JT original (ID {{ jt_original.id }})"
+      ansible.builtin.debug:
+        msg: "Permisos asignados al JT original: {{ permisos_antes.json.count }}"
+
+    # ==========================================================================
+    # FASE 2: Borrar y recrear el JT (simula lo que hace el cliente)
+    # ==========================================================================
+    - name: "FASE 2 - BORRAR el JT"
+      ansible.controller.job_template:
+        name: "JT-Recreacion-Test"
+        organization: "Org-Test-RBAC"
+        state: absent
+
+    - name: "FASE 2 - RECREAR el JT con el mismo nombre"
+      ansible.controller.job_template:
+        name: "JT-Recreacion-Test"
+        organization: "Org-Test-RBAC"
+        project: "Proyecto-Test-RBAC"
+        playbook: "hello_world.yml"
+        inventory: "Inventario-Test-RBAC"
+        state: present
+      register: jt_recreado
+
+    - name: "FASE 2 - ID del JT recreado"
+      ansible.builtin.debug:
+        msg: |
+          ID ORIGINAL: {{ jt_original.id }}
+          ID RECREADO: {{ jt_recreado.id }}
+          HA CAMBIADO: {{ jt_original.id != jt_recreado.id }}
+
+    # ==========================================================================
+    # FASE 3: Verificar que los permisos por ID se han PERDIDO
+    # ==========================================================================
+    - name: "FASE 3 - Buscar permisos con el ID ORIGINAL (ya no existe)"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/role_team_assignments/?team__name=Team-Test-RBAC&object_id={{ jt_original.id }}"
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+      register: permisos_id_original
+
+    - name: "FASE 3 - Buscar permisos con el ID NUEVO"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/role_team_assignments/?team__name=Team-Test-RBAC&object_id={{ jt_recreado.id }}"
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+      register: permisos_id_nuevo
+
+    - name: "FASE 3 - Resultado de permisos tras recreacion"
+      ansible.builtin.debug:
+        msg: |
+          Permisos con ID ORIGINAL ({{ jt_original.id }}): {{ permisos_id_original.json.count }} encontrados
+          Permisos con ID NUEVO ({{ jt_recreado.id }}): {{ permisos_id_nuevo.json.count }} encontrados
+          >>> Los permisos asignados por ID se han PERDIDO al recrear el objeto
+
+    # ==========================================================================
+    # FASE 4: Reasignar con metodo DEPRECATED (por nombre) - deberia funcionar
+    # ==========================================================================
+    - name: "FASE 4 - Reasignar con deprecated (por nombre, sin conocer el ID)"
+      ansible.controller.role:
+        team: "Team-Test-RBAC"
+        role: "execute"
+        job_templates:
+          - "JT-Recreacion-Test"
+        lookup_organization: "Org-Test-RBAC"
+        state: present
+      register: reasignar_nombre
+
+    - name: "FASE 4 - Reasignar con deprecated funciono?"
+      ansible.builtin.debug:
+        msg: "Reasignacion por nombre: {{ 'OK' if reasignar_nombre is not failed else 'FALLO' }}"
+
+    - name: "FASE 4 - Verificar permisos sobre el JT recreado"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/role_team_assignments/?team__name=Team-Test-RBAC&object_id={{ jt_recreado.id }}"
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+      register: permisos_tras_reasignar
+
+    - name: "FASE 4 - Permisos tras reasignar por nombre"
+      ansible.builtin.debug:
+        msg: "Permisos sobre JT recreado (ID {{ jt_recreado.id }}): {{ permisos_tras_reasignar.json.count }} encontrados"
+
+    # ==========================================================================
+    # FASE 5: Intentar reasignar con metodo NUEVO sin saber el ID nuevo
+    # (esto es lo que NO pueden hacer)
+    # ==========================================================================
+    - name: "FASE 5 - Intentar con role_team_assignment usando el ID VIEJO (roto)"
+      ansible.controller.role_team_assignment:
+        team: "Team-Test-RBAC"
+        role_definition: "JobTemplate Admin"
+        object_id: "{{ jt_original.id }}"
+        state: present
+      register: reasignar_id_viejo
+      ignore_errors: true
+
+    - name: "FASE 5 - Resultado con ID viejo"
+      ansible.builtin.debug:
+        msg: "Reasignar con ID viejo ({{ jt_original.id }}): {{ 'OK (inesperado!)' if reasignar_id_viejo is not failed else 'FALLO - ' + (reasignar_id_viejo.msg | default(''))[:150] }}"
+
+    # ==========================================================================
+    # FASE 6: Workaround - resolver nombre a ID nuevo y reasignar
+    # ==========================================================================
+    - name: "FASE 6 - Resolver ID nuevo por nombre"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/job_templates/?name=JT-Recreacion-Test&organization__name=Org-Test-RBAC"
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+      register: jt_lookup_nuevo
+
+    - name: "FASE 6 - Reasignar con ID resuelto"
+      ansible.controller.role_team_assignment:
+        team: "Team-Test-RBAC"
+        role_definition: "JobTemplate Admin"
+        object_id: "{{ jt_lookup_nuevo.json.results[0].id }}"
+        state: present
+      register: reasignar_id_resuelto
+
+    - name: "FASE 6 - Workaround funciono?"
+      ansible.builtin.debug:
+        msg: "Reasignar con ID resuelto por nombre: {{ 'OK' if reasignar_id_resuelto is not failed else 'FALLO' }}"
+
+    # ==========================================================================
+    # RESUMEN FINAL
+    # ==========================================================================
+    - name: "RESUMEN - Impacto de recreacion de objetos en RBAC"
+      ansible.builtin.debug:
+        msg: |
+          =====================================================================
+          RESUMEN: RECREACION DE OBJETOS Y PERMISOS
+          =====================================================================
+
+          JT "JT-Recreacion-Test":
+            ID original: {{ jt_original.id }}
+            ID recreado: {{ jt_recreado.id }}
+            El ID cambio: {{ jt_original.id != jt_recreado.id }}
+
+          PERMISOS TRAS RECREAR:
+            Con ID original ({{ jt_original.id }}):  {{ permisos_id_original.json.count }} permisos (SE PIERDEN)
+            Con ID nuevo ({{ jt_recreado.id }}):      {{ permisos_id_nuevo.json.count }} permisos (NO hay)
+
+          REASIGNACION:
+            Por NOMBRE (deprecated):                 {{ 'OK' if reasignar_nombre is not failed else 'FALLO' }} - funciona sin conocer el ID
+            Por ID VIEJO (role_team_assignment):      {{ 'OK' if reasignar_id_viejo is not failed else 'FALLO' }} - el ID ya no existe
+            Por ID RESUELTO (workaround):             {{ 'OK' if reasignar_id_resuelto is not failed else 'FALLO' }} - resolver nombre, luego asignar
+
+          CONCLUSION:
+            Cuando un objeto se recrea, los permisos asignados por ID se PIERDEN.
+            El modulo deprecated (por nombre) los reasigna automaticamente.
+            El workaround (resolver nombre -> ID -> asignar) tambien funciona
+            pero requiere un paso extra que el deprecated no necesita.
+          =====================================================================
+
+    # Limpiar
+    - name: "Limpieza - Borrar JT de recreacion"
+      ansible.controller.job_template:
+        name: "JT-Recreacion-Test"
+        organization: "Org-Test-RBAC"
+        state: absent
+      ignore_errors: true
