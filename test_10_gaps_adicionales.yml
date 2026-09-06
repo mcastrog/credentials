@@ -161,10 +161,10 @@
       register: p2a
       ignore_errors: true
 
-    - name: "P2B - DEPRECATED: asignar approve en WJT por nombre"
+    - name: "P2B - DEPRECATED: asignar approval en WJT por nombre"
       ansible.controller.role:
         team: "Test10-Team"
-        role: "approve"
+        role: "approval"
         workflow: "Test10-WJT"
         lookup_organization: "Test10-Org"
         state: present
