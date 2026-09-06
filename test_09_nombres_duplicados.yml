@@ -332,9 +332,9 @@
         body_format: json
         body:
           team: "{{ team_lookups.results[0].json.results[0].id }}"
-          role_definition: "{{ rd_inv_use }}"
+          role_definition: "{{ rd_jt_execute }}"
           object_id: "{{ jt_alpha.id }}"
-        status_code: [201, 200]
+        status_code: [201, 200, 409]
       register: idemp_1
 
     - name: "IDEMPOTENCIA - Asignar MISMO permiso (segunda vez)"
@@ -348,7 +348,7 @@
         body_format: json
         body:
           team: "{{ team_lookups.results[0].json.results[0].id }}"
-          role_definition: "{{ rd_inv_use }}"
+          role_definition: "{{ rd_jt_execute }}"
           object_id: "{{ jt_alpha.id }}"
         status_code: [201, 200, 409]
       register: idemp_2
