@@ -1,0 +1,443 @@
+---
+- name: "Test 10 - Gaps adicionales: user assignments, WJTs, absent modulo, async, object_ansible_id"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  module_defaults:
+    group/ansible.controller.controller:
+      controller_host: "{{ aap_hostname }}"
+      controller_username: "{{ aap_username }}"
+      controller_password: "{{ aap_password }}"
+      validate_certs: "{{ aap_validate_certs | default(false) }}"
+
+  vars:
+    platform_auth: &platform_auth
+      aap_hostname: "{{ aap_hostname }}"
+      aap_username: "{{ aap_username }}"
+      aap_password: "{{ aap_password }}"
+      aap_validate_certs: "{{ aap_validate_certs | default(false) }}"
+
+  tasks:
+    # ==================================================================
+    # SETUP: Crear infraestructura para los tests
+    # ==================================================================
+    - name: "SETUP - Crear organizacion"
+      ansible.controller.organization:
+        name: "Test10-Org"
+        state: present
+
+    - name: "SETUP - Crear team"
+      ansible.controller.team:
+        name: "Test10-Team"
+        organization: "Test10-Org"
+        state: present
+
+    - name: "SETUP - Crear usuario"
+      ansible.controller.user:
+        username: "test10-user"
+        password: "Passw0rd123!"
+        email: "test10@example.com"
+        organization: "Test10-Org"
+        state: present
+
+    - name: "SETUP - Crear proyecto"
+      ansible.controller.project:
+        name: "Test10-Project"
+        organization: "Test10-Org"
+        scm_type: git
+        scm_url: "https://github.com/ansible/ansible-tower-samples.git"
+        wait: true
+        state: present
+
+    - name: "SETUP - Crear inventario"
+      ansible.controller.inventory:
+        name: "Test10-Inventory"
+        organization: "Test10-Org"
+        state: present
+
+    - name: "SETUP - Crear JT"
+      ansible.controller.job_template:
+        name: "Test10-JT"
+        organization: "Test10-Org"
+        project: "Test10-Project"
+        playbook: "hello_world.yml"
+        inventory: "Test10-Inventory"
+        state: present
+      register: jt_created
+
+    - name: "SETUP - Crear Workflow JT"
+      ansible.controller.workflow_job_template:
+        name: "Test10-WJT"
+        organization: "Test10-Org"
+        state: present
+      register: wjt_created
+
+    - name: "SETUP - Anadir nodo al WJT"
+      ansible.controller.workflow_job_template_node:
+        workflow_job_template: "Test10-WJT"
+        organization: "Test10-Org"
+        unified_job_template: "Test10-JT"
+        identifier: "node1"
+        state: present
+
+    - name: "SETUP - Resolver role_definition IDs"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/role_definitions/?name={{ item | urlencode }}"
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+      register: rd_lookups
+      loop:
+        - "JobTemplate Execute"
+        - "JobTemplate Admin"
+        - "WorkflowJobTemplate Execute"
+        - "WorkflowJobTemplate Admin"
+        - "WorkflowJobTemplate Approve"
+        - "Inventory Use"
+        - "Inventory Admin"
+        - "Project Use"
+
+    - name: "SETUP - Guardar role_definition IDs"
+      ansible.builtin.set_fact:
+        rd_jt_execute: "{{ rd_lookups.results[0].json.results[0].id }}"
+        rd_jt_admin: "{{ rd_lookups.results[1].json.results[0].id }}"
+        rd_wjt_execute: "{{ rd_lookups.results[2].json.results[0].id }}"
+        rd_wjt_admin: "{{ rd_lookups.results[3].json.results[0].id }}"
+        rd_wjt_approve: "{{ rd_lookups.results[4].json.results[0].id }}"
+        rd_inv_use: "{{ rd_lookups.results[5].json.results[0].id }}"
+        rd_inv_admin: "{{ rd_lookups.results[6].json.results[0].id }}"
+        rd_proj_use: "{{ rd_lookups.results[7].json.results[0].id }}"
+
+    # ==================================================================
+    # PUNTO 1: role_user_assignment para objetos del controller
+    # ==================================================================
+    - name: "P1A - role_user_assignment con object_id (JT)"
+      ansible.controller.role_user_assignment:
+        user: "test10-user"
+        role_definition: "JobTemplate Execute"
+        object_id: "{{ jt_created.id }}"
+        state: present
+      register: p1a
+      ignore_errors: true
+
+    - name: "P1B - role_user_assignment con object_id (inventario)"
+      ansible.controller.role_user_assignment:
+        user: "test10-user"
+        role_definition: "Inventory Use"
+        object_id: "{{ lookup('ansible.builtin.pipe', 'curl -sk -u ' + aap_username + ':' + aap_password + ' ' + aap_hostname + '/api/controller/v2/inventories/?name=Test10-Inventory | python3 -c \"import sys,json; print(json.load(sys.stdin)[\\\"results\\\"][0][\\\"id\\\"])\"') }}"
+        state: present
+      register: p1b
+      ignore_errors: true
+
+    - name: "P1C - Intentar role_user_assignment SIN object_id (solo nombre)"
+      ansible.controller.role_user_assignment:
+        user: "test10-user"
+        role_definition: "JobTemplate Execute"
+        state: present
+      register: p1c
+      ignore_errors: true
+
+    - name: "P1 - Resultado role_user_assignment"
+      ansible.builtin.debug:
+        msg: |
+          PUNTO 1: role_user_assignment para objetos controller
+          1A Con object_id (JT):       {{ 'OK' if p1a is not failed else 'FALLO: ' + p1a.msg }}
+          1B Con object_id (inv):       {{ 'OK' if p1b is not failed else 'FALLO: ' + p1b.msg }}
+          1C Sin object_id (nombre):    {{ 'FALLO (esperado): ' + p1c.msg if p1c is failed else 'OK (inesperado)' }}
+          Conclusion: role_user_assignment {{ 'requiere object_id, igual que role_team_assignment' if p1c is failed else 'ACEPTA nombres??' }}
+
+    # ==================================================================
+    # PUNTO 2: Workflow Job Templates — RBAC con deprecated y nuevos
+    # ==================================================================
+    - name: "P2A - DEPRECATED: asignar execute en WJT por nombre"
+      ansible.controller.role:
+        team: "Test10-Team"
+        role: "execute"
+        workflow: "Test10-WJT"
+        lookup_organization: "Test10-Org"
+        state: present
+      register: p2a
+      ignore_errors: true
+
+    - name: "P2B - DEPRECATED: asignar approve en WJT por nombre"
+      ansible.controller.role:
+        team: "Test10-Team"
+        role: "approve"
+        workflow: "Test10-WJT"
+        lookup_organization: "Test10-Org"
+        state: present
+      register: p2b
+      ignore_errors: true
+
+    - name: "P2C - role_team_assignment: WJT Execute con object_id"
+      ansible.controller.role_team_assignment:
+        team: "Test10-Team"
+        role_definition: "WorkflowJobTemplate Admin"
+        object_id: "{{ wjt_created.id }}"
+        state: present
+      register: p2c
+      ignore_errors: true
+
+    - name: "P2D - Verificar permisos en WJT"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/role_team_assignments/?object_id={{ wjt_created.id }}"
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+      register: p2d_perms
+
+    - name: "P2E - role_user_assignment: WJT Approve con object_id"
+      ansible.controller.role_user_assignment:
+        user: "test10-user"
+        role_definition: "WorkflowJobTemplate Approve"
+        object_id: "{{ wjt_created.id }}"
+        state: present
+      register: p2e
+      ignore_errors: true
+
+    - name: "P2 - Resultado WJT RBAC"
+      ansible.builtin.debug:
+        msg: |
+          PUNTO 2: Workflow Job Templates RBAC
+          2A Deprecated execute (nombre):    {{ 'OK' if p2a is not failed else 'FALLO: ' + p2a.msg }}
+          2B Deprecated approve (nombre):    {{ 'OK' if p2b is not failed else 'FALLO: ' + p2b.msg }}
+          2C role_team_assignment (ID):       {{ 'OK' if p2c is not failed else 'FALLO: ' + p2c.msg }}
+          2D Permisos team en WJT:           {{ p2d_perms.json.count }} asignaciones
+          2E role_user_assignment approve:    {{ 'OK' if p2e is not failed else 'FALLO: ' + p2e.msg }}
+          Conclusion: WJTs funcionan igual que JTs - deprecated con nombre, nuevos con ID
+
+    # ==================================================================
+    # PUNTO 3: state: absent con ansible.controller.role_team_assignment
+    # ==================================================================
+    - name: "P3A - Crear asignacion para luego borrar"
+      ansible.controller.role_team_assignment:
+        team: "Test10-Team"
+        role_definition: "Inventory Use"
+        object_id: "{{ lookup('ansible.builtin.pipe', 'curl -sk -u ' + aap_username + ':' + aap_password + ' ' + aap_hostname + '/api/controller/v2/inventories/?name=Test10-Inventory | python3 -c \"import sys,json; print(json.load(sys.stdin)[\\\"results\\\"][0][\\\"id\\\"])\"') }}"
+        state: present
+      register: p3a
+
+    - name: "P3B - Verificar que existe"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/role_team_assignments/?object_id={{ lookup('ansible.builtin.pipe', 'curl -sk -u ' + aap_username + ':' + aap_password + ' ' + aap_hostname + '/api/controller/v2/inventories/?name=Test10-Inventory | python3 -c \"import sys,json; print(json.load(sys.stdin)[\\\"results\\\"][0][\\\"id\\\"])\"') }}&role_definition={{ rd_inv_use }}"
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+      register: p3b_before
+
+    - name: "P3C - Quitar con state: absent"
+      ansible.controller.role_team_assignment:
+        team: "Test10-Team"
+        role_definition: "Inventory Use"
+        object_id: "{{ lookup('ansible.builtin.pipe', 'curl -sk -u ' + aap_username + ':' + aap_password + ' ' + aap_hostname + '/api/controller/v2/inventories/?name=Test10-Inventory | python3 -c \"import sys,json; print(json.load(sys.stdin)[\\\"results\\\"][0][\\\"id\\\"])\"') }}"
+        state: absent
+      register: p3c
+      ignore_errors: true
+
+    - name: "P3D - Verificar que se quito"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/role_team_assignments/?object_id={{ lookup('ansible.builtin.pipe', 'curl -sk -u ' + aap_username + ':' + aap_password + ' ' + aap_hostname + '/api/controller/v2/inventories/?name=Test10-Inventory | python3 -c \"import sys,json; print(json.load(sys.stdin)[\\\"results\\\"][0][\\\"id\\\"])\"') }}&role_definition={{ rd_inv_use }}"
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+      register: p3d_after
+
+    - name: "P3E - Idempotencia: quitar otra vez (ya no existe)"
+      ansible.controller.role_team_assignment:
+        team: "Test10-Team"
+        role_definition: "Inventory Use"
+        object_id: "{{ lookup('ansible.builtin.pipe', 'curl -sk -u ' + aap_username + ':' + aap_password + ' ' + aap_hostname + '/api/controller/v2/inventories/?name=Test10-Inventory | python3 -c \"import sys,json; print(json.load(sys.stdin)[\\\"results\\\"][0][\\\"id\\\"])\"') }}"
+        state: absent
+      register: p3e
+      ignore_errors: true
+
+    - name: "P3F - Quitar con deprecated (por nombre)"
+      ansible.controller.role:
+        team: "Test10-Team"
+        role: "use"
+        inventories: ["Test10-Inventory"]
+        lookup_organization: "Test10-Org"
+        state: absent
+      register: p3f
+      ignore_errors: true
+
+    - name: "P3 - Resultado state absent"
+      ansible.builtin.debug:
+        msg: |
+          PUNTO 3: state: absent con modulos
+          3A Crear asignacion:              {{ 'OK' if p3a is not failed else 'FALLO' }}
+          3B Permisos antes de absent:       {{ p3b_before.json.count }} (esperado >= 1)
+          3C absent con role_team_assignment: {{ 'OK' if p3c is not failed else 'FALLO: ' + p3c.msg }}
+          3D Permisos despues de absent:     {{ p3d_after.json.count }} (esperado 0)
+          3E Idempotencia absent:            {{ 'OK (changed=' + (p3e.changed | string) + ')' if p3e is not failed else 'FALLO: ' + p3e.msg }}
+          3F absent con deprecated (nombre): {{ 'OK' if p3f is not failed else 'FALLO: ' + p3f.msg }}
+
+    # ==================================================================
+    # PUNTO 4: Async con infra.aap_configuration roles
+    # ==================================================================
+    - name: "P4A - Probar controller_roles role (deprecated) con async default"
+      ansible.builtin.include_role:
+        name: infra.aap_configuration.controller_roles
+      vars:
+        controller_roles:
+          - team: "Test10-Team"
+            role: "execute"
+            job_templates:
+              - "Test10-JT"
+            lookup_organization: "Test10-Org"
+            state: present
+        aap_hostname: "{{ aap_hostname }}"
+        aap_username: "{{ aap_username }}"
+        aap_password: "{{ aap_password }}"
+        aap_validate_certs: false
+      register: p4a
+      ignore_errors: true
+
+    - name: "P4A - Resultado"
+      ansible.builtin.debug:
+        msg: "P4A controller_roles (async default): {{ 'OK' if p4a is not failed else 'FALLO' }}"
+
+    - name: "P4B - Probar gateway_role_team_assignments role"
+      ansible.builtin.include_role:
+        name: infra.aap_configuration.gateway_role_team_assignments
+      vars:
+        gateway_role_team_assignments:
+          - team: "Test10-Team"
+            role_definition: "Organization Member"
+            assignment_objects:
+              - name: "Test10-Org"
+                type: "organizations"
+            state: present
+        aap_hostname: "{{ aap_hostname }}"
+        aap_username: "{{ aap_username }}"
+        aap_password: "{{ aap_password }}"
+        aap_validate_certs: false
+      register: p4b
+      ignore_errors: true
+
+    - name: "P4B - Resultado"
+      ansible.builtin.debug:
+        msg: "P4B gateway_role_team_assignments: {{ 'OK' if p4b is not failed else 'FALLO' }}"
+
+    # ==================================================================
+    # PUNTO 5: object_ansible_id (UUID)
+    # ==================================================================
+    - name: "P5A - Consultar object_ansible_id en JT"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/job_templates/{{ jt_created.id }}/"
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+      register: p5a_jt
+
+    - name: "P5B - Consultar object_ansible_id en WJT"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/workflow_job_templates/{{ wjt_created.id }}/"
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+      register: p5b_wjt
+
+    - name: "P5C - Consultar object_ansible_id en inventario"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/inventories/?name=Test10-Inventory"
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+      register: p5c_inv
+
+    - name: "P5D - Consultar object_ansible_id en organizacion"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/organizations/?name=Test10-Org"
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+      register: p5d_org
+
+    - name: "P5E - Consultar si role_team_assignment acepta object_ansible_id"
+      ansible.builtin.uri:
+        url: "{{ aap_hostname }}/api/controller/v2/role_team_assignments/"
+        method: POST
+        user: "{{ aap_username }}"
+        password: "{{ aap_password }}"
+        validate_certs: false
+        force_basic_auth: true
+        body_format: json
+        body:
+          team: "{{ lookup('ansible.builtin.pipe', 'curl -sk -u ' + aap_username + ':' + aap_password + ' ' + aap_hostname + '/api/controller/v2/teams/?name=Test10-Team | python3 -c \"import sys,json; print(json.load(sys.stdin)[\\\"results\\\"][0][\\\"id\\\"])\"') }}"
+          role_definition: "{{ rd_proj_use }}"
+          object_ansible_id: "{{ p5a_jt.json.get('object_ansible_id', 'null') }}"
+        status_code: [201, 200, 400, 422]
+      register: p5e_uuid
+      ignore_errors: true
+
+    - name: "P5 - Resultado object_ansible_id"
+      ansible.builtin.debug:
+        msg: |
+          PUNTO 5: object_ansible_id (UUID)
+          JT object_ansible_id:    {{ p5a_jt.json.get('object_ansible_id', 'NO EXISTE CAMPO') | default('null', true) }}
+          WJT object_ansible_id:   {{ p5b_wjt.json.get('object_ansible_id', 'NO EXISTE CAMPO') | default('null', true) }}
+          Inv object_ansible_id:   {{ p5c_inv.json.results[0].get('object_ansible_id', 'NO EXISTE CAMPO') | default('null', true) }}
+          Org object_ansible_id:   {{ p5d_org.json.results[0].get('object_ansible_id', 'NO EXISTE CAMPO') | default('null', true) }}
+          Usar UUID en role_team_assignment: {{ 'FALLO: ' + (p5e_uuid.json | string)[:100] if p5e_uuid.status >= 400 else 'OK??' }}
+
+    # ==================================================================
+    # RESUMEN
+    # ==================================================================
+    - name: "RESUMEN TEST 10"
+      ansible.builtin.debug:
+        msg: |
+          =====================================================================
+          TEST 10: GAPS ADICIONALES
+          =====================================================================
+
+          P1 - role_user_assignment (controller objects):
+            Con object_id:            {{ 'OK' if p1a is not failed else 'FALLO' }}
+            Sin object_id (nombre):   {{ 'Requiere ID (esperado)' if p1c is failed else 'Acepta nombre' }}
+
+          P2 - Workflow Job Templates:
+            Deprecated execute:       {{ 'OK' if p2a is not failed else 'FALLO' }}
+            Deprecated approve:       {{ 'OK' if p2b is not failed else 'FALLO' }}
+            role_team_assignment:     {{ 'OK' if p2c is not failed else 'FALLO' }}
+            role_user_assignment:     {{ 'OK' if p2e is not failed else 'FALLO' }}
+            Permisos asignados:       {{ p2d_perms.json.count }}
+
+          P3 - state: absent:
+            role_team_assignment:     {{ 'OK' if p3c is not failed else 'FALLO' }}
+            Permisos eliminados:      {{ 'SI' if p3d_after.json.count == 0 else 'NO' }}
+            Idempotencia absent:      {{ 'SI (changed=' + (p3e.changed | string) + ')' if p3e is not failed else 'FALLO' }}
+            Deprecated absent:        {{ 'OK' if p3f is not failed else 'FALLO' }}
+
+          P4 - infra.aap_configuration roles:
+            controller_roles:         {{ 'OK' if p4a is not failed else 'FALLO (async?)' }}
+            gateway_role_team_assign: {{ 'OK' if p4b is not failed else 'FALLO' }}
+
+          P5 - object_ansible_id:
+            JT:  {{ p5a_jt.json.get('object_ansible_id', 'NO EXISTE') | default('null', true) }}
+            WJT: {{ p5b_wjt.json.get('object_ansible_id', 'NO EXISTE') | default('null', true) }}
+            Inv: {{ p5c_inv.json.results[0].get('object_ansible_id', 'NO EXISTE') | default('null', true) }}
+            Org: {{ p5d_org.json.results[0].get('object_ansible_id', 'NO EXISTE') | default('null', true) }}
+            Usable en API:            {{ 'NO' if p5e_uuid.status >= 400 else 'SI' }}
+          =====================================================================
+
+    # Limpieza
+    - name: "Limpieza"
+      ansible.controller.organization:
+        name: "Test10-Org"
+        state: absent
+      ignore_errors: true
+
+    - name: "Limpieza usuario"
+      ansible.controller.user:
+        username: "test10-user"
+        state: absent
+      ignore_errors: true
