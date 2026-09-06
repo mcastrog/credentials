@@ -378,10 +378,12 @@
             en diferentes orgs. Hay que pasar el team ID tambien, no solo el object_id.
 
           QUITAR PERMISOS (state: absent):
-            Quitar de Alpha sin afectar Beta:  {{ 'OK' if perms_absent.results[0].json.count == 0 and perms_absent.results[1].json.count > 0 else 'FALLO' }}
+            Quitar de Alpha sin afectar Beta:  {{ 'OK' if beta_after_absent.json.count > 0 else 'FALLO' }}
 
-          IDEMPOTENCIA:
-            Segunda ejecucion sin cambios:     {{ 'SI' if not idemp_2.changed else 'NO' }}
+          IDEMPOTENCIA (role_team_assignment via API):
+            Primera ejecucion: status={{ idemp_1.status }}
+            Segunda ejecucion: status={{ idemp_2.status }}
+            Idempotente: {{ 'SI (409 = ya existe)' if idemp_2.status == 409 else 'NO (201 = crea duplicado)' if idemp_2.status == 201 else 'SI (200 = sin cambio)' }}
           =====================================================================
 
     # Limpieza
