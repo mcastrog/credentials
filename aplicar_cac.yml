@@ -1,0 +1,19 @@
+---
+- name: CaC - Aplicar configuración completa a AAP
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - secrets.yml
+    - credentials.yml
+
+  vars:
+    controller_hostname: "{{ controller_host }}"
+    controller_username: "{{ controller_user }}"
+    controller_password: "{{ vault_controller_password }}"
+    controller_validate_certs: false
+
+  roles:
+    - role: infra.controller_configuration.organizations
+    - role: infra.controller_configuration.credentials
