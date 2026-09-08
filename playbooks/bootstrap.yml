@@ -126,7 +126,7 @@
         controller_password: "{{ controller_password }}"
         validate_certs: "{{ controller_validate_certs }}"
         name: "CaC - {{ item.torre_name }}"
-        organization: "{{ item.organization }}"
+        organization: "Default"
         project: "CaC - Configuración Completa"
         playbook: "playbooks/site_torre.yml"
         inventory: "Demo Inventory"
