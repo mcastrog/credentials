@@ -8,12 +8,33 @@
     - secrets.yml
     - credentials.yml
 
-  vars:
-    controller_hostname: "{{ controller_host }}"
-    controller_username: "{{ controller_user }}"
-    controller_password: "{{ vault_controller_password }}"
-    controller_validate_certs: false
+  tasks:
+    - name: Crear/actualizar organizaciones
+      ansible.controller.organization:
+        controller_host: "{{ controller_host }}"
+        controller_username: "{{ controller_user }}"
+        controller_password: "{{ vault_controller_password }}"
+        validate_certs: false
+        name: "{{ item.name }}"
+        description: "{{ item.description | default(omit) }}"
+        state: present
+      loop: "{{ controller_organizations }}"
+      loop_control:
+        label: "{{ item.name }}"
 
-  roles:
-    - role: infra.controller_configuration.organizations
-    - role: infra.controller_configuration.credentials
+    - name: Crear/actualizar credenciales
+      ansible.controller.credential:
+        controller_host: "{{ controller_host }}"
+        controller_username: "{{ controller_user }}"
+        controller_password: "{{ vault_controller_password }}"
+        validate_certs: false
+        name: "{{ item.name }}"
+        organization: "{{ item.organization }}"
+        credential_type: "{{ item.credential_type }}"
+        description: "{{ item.description | default(omit) }}"
+        inputs: "{{ item.inputs }}"
+        state: present
+      loop: "{{ controller_credentials }}"
+      loop_control:
+        label: "{{ item.name }}"
+      no_log: true
