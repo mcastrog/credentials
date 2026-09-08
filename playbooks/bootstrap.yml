@@ -1,0 +1,190 @@
+---
+- name: "CaC - Bootstrap: recrea AAP completo desde cero"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - ../common/secrets.yml
+    - ../common/organizations.yml
+    - ../common/bootstrap.yml
+
+  vars:
+    controller_hostname: "{{ vault_controller_hostname }}"
+    controller_username: "{{ vault_controller_username }}"
+    controller_password: "{{ vault_controller_password }}"
+    controller_validate_certs: false
+
+  tasks:
+    # === 1. Organizaciones y equipos (dispatch) ===
+    - name: "Fase 1: Crear organizaciones y equipos"
+      ansible.builtin.include_role:
+        name: infra.controller_configuration.dispatch
+
+    # === 2. Asociar Galaxy credential a cada org ===
+    - name: "Fase 2: Asociar Ansible Galaxy a organizaciones"
+      ansible.controller.organization:
+        controller_host: "{{ controller_hostname }}"
+        controller_username: "{{ controller_username }}"
+        controller_password: "{{ controller_password }}"
+        validate_certs: "{{ controller_validate_certs }}"
+        name: "{{ item }}"
+        galaxy_credentials:
+          - "Ansible Galaxy"
+        state: present
+      loop:
+        - "Torre-Linux"
+        - "Torre-Windows"
+        - "Torre-Cloud"
+
+    # === 3. Credenciales Vault por torre ===
+    - name: "Fase 3: Crear credenciales Vault por torre"
+      ansible.controller.credential:
+        controller_host: "{{ controller_hostname }}"
+        controller_username: "{{ controller_username }}"
+        controller_password: "{{ controller_password }}"
+        validate_certs: "{{ controller_validate_certs }}"
+        name: "{{ item.name }}"
+        organization: "{{ item.organization }}"
+        credential_type: "Vault"
+        description: "{{ item.description }}"
+        inputs:
+          vault_password: "{{ item.vault_password }}"
+          vault_id: "{{ item.vault_id }}"
+        state: present
+      loop: "{{ bootstrap_vault_credentials }}"
+      loop_control:
+        label: "{{ item.name }}"
+      no_log: true
+
+    # === 4. Credencial GitHub para webhook ===
+    - name: "Fase 4: Crear credencial GitHub para webhook"
+      ansible.controller.credential:
+        controller_host: "{{ controller_hostname }}"
+        controller_username: "{{ controller_username }}"
+        controller_password: "{{ controller_password }}"
+        validate_certs: "{{ controller_validate_certs }}"
+        name: "GitHub Webhook Token"
+        organization: "Default"
+        credential_type: "GitHub Personal Access Token"
+        inputs:
+          token: "{{ vault_github_token }}"
+        state: present
+      no_log: true
+
+    # === 5. EE custom ===
+    - name: "Fase 5: Registrar Execution Environment con dispatch"
+      ansible.controller.execution_environment:
+        controller_host: "{{ controller_hostname }}"
+        controller_username: "{{ controller_username }}"
+        controller_password: "{{ controller_password }}"
+        validate_certs: "{{ controller_validate_certs }}"
+        name: "EE CaC Dispatch"
+        image: "{{ bootstrap_ee_image }}"
+        pull: missing
+        description: "EE con infra.controller_configuration para CaC con dispatch"
+        state: present
+
+    # === 6. Proyecto CaC ===
+    - name: "Fase 6: Crear proyecto CaC"
+      ansible.controller.project:
+        controller_host: "{{ controller_hostname }}"
+        controller_username: "{{ controller_username }}"
+        controller_password: "{{ controller_password }}"
+        validate_certs: "{{ controller_validate_certs }}"
+        name: "CaC - Configuración Completa"
+        organization: "Default"
+        scm_type: git
+        scm_url: "{{ bootstrap_cac_repo }}"
+        scm_branch: main
+        scm_update_on_launch: true
+        description: "Repo con toda la configuración de AAP como código"
+        wait: true
+        state: present
+
+    # === 7. Job Templates por torre ===
+    - name: "Fase 7a: Crear JT Common"
+      ansible.controller.job_template:
+        controller_host: "{{ controller_hostname }}"
+        controller_username: "{{ controller_username }}"
+        controller_password: "{{ controller_password }}"
+        validate_certs: "{{ controller_validate_certs }}"
+        name: "CaC - Common (Orgs y Equipos)"
+        organization: "Default"
+        project: "CaC - Configuración Completa"
+        playbook: "playbooks/site_common.yml"
+        inventory: "Demo Inventory"
+        execution_environment: "EE CaC Dispatch"
+        credentials:
+          - "Vault - Master"
+        state: present
+
+    - name: "Fase 7b: Crear JTs por torre"
+      ansible.controller.job_template:
+        controller_host: "{{ controller_hostname }}"
+        controller_username: "{{ controller_username }}"
+        controller_password: "{{ controller_password }}"
+        validate_certs: "{{ controller_validate_certs }}"
+        name: "CaC - {{ item.torre_name }}"
+        organization: "{{ item.organization }}"
+        project: "CaC - Configuración Completa"
+        playbook: "playbooks/site_torre.yml"
+        inventory: "Demo Inventory"
+        execution_environment: "EE CaC Dispatch"
+        extra_vars:
+          torre: "{{ item.torre_dir }}"
+        credentials:
+          - "Vault - Master"
+          - "{{ item.vault_credential }}"
+        state: present
+      loop: "{{ bootstrap_torres }}"
+      loop_control:
+        label: "{{ item.torre_name }}"
+
+    # === 8. Workflow con webhook ===
+    - name: "Fase 8a: Crear Workflow"
+      ansible.controller.workflow_job_template:
+        controller_host: "{{ controller_hostname }}"
+        controller_username: "{{ controller_username }}"
+        controller_password: "{{ controller_password }}"
+        validate_certs: "{{ controller_validate_certs }}"
+        name: "CaC - Despliegue Completo"
+        organization: "Default"
+        description: "Push a git → webhook → common + 3 torres en paralelo"
+        webhook_service: github
+        webhook_credential: "GitHub Webhook Token"
+        state: present
+
+    - name: "Fase 8b: Configurar nodos del Workflow"
+      ansible.controller.workflow_job_template_node:
+        controller_host: "{{ controller_hostname }}"
+        controller_username: "{{ controller_username }}"
+        controller_password: "{{ controller_password }}"
+        validate_certs: "{{ controller_validate_certs }}"
+        workflow_job_template: "CaC - Despliegue Completo"
+        identifier: "common"
+        unified_job_template: "CaC - Common (Orgs y Equipos)"
+        state: present
+
+    - name: "Fase 8c: Añadir torres como success nodes de Common"
+      ansible.controller.workflow_job_template_node:
+        controller_host: "{{ controller_hostname }}"
+        controller_username: "{{ controller_username }}"
+        controller_password: "{{ controller_password }}"
+        validate_certs: "{{ controller_validate_certs }}"
+        workflow_job_template: "CaC - Despliegue Completo"
+        identifier: "{{ item.torre_dir }}"
+        unified_job_template: "CaC - {{ item.torre_name }}"
+        success_nodes:
+          - "common"
+        state: present
+      loop: "{{ bootstrap_torres }}"
+      loop_control:
+        label: "{{ item.torre_name }}"
+
+    - name: "Bootstrap completado"
+      ansible.builtin.debug:
+        msg: >-
+          Bootstrap OK. Configura el webhook en GitHub apuntando a:
+          {{ controller_hostname }}/api/controller/v2/workflow_job_templates/CaC+-+Despliegue+Completo/github/
+          A partir de ahora, cada push ejecuta el CaC completo.

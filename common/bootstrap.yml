@@ -1,0 +1,49 @@
+---
+# === Repo CaC ===
+bootstrap_cac_repo: "https://github.com/mcastrog/credentials.git"
+
+# === EE con infra.controller_configuration ===
+bootstrap_ee_image: "image-registry.openshift-image-registry.svc:5000/aap/ee-cac-dispatch:latest"
+
+# === Credenciales Vault por torre (los valores vienen de common/secrets.yml) ===
+bootstrap_vault_credentials:
+  - name: "Vault - Master"
+    organization: "Default"
+    description: "Vault master — descifra common/secrets.yml"
+    vault_password: "{{ vault_master_password }}"
+    vault_id: "master"
+
+  - name: "Vault - Torre Linux"
+    organization: "Torre-Linux"
+    description: "Descifra torre-linux/secrets.yml"
+    vault_password: "{{ vault_linux_vault_password }}"
+    vault_id: "linux"
+
+  - name: "Vault - Torre Windows"
+    organization: "Torre-Windows"
+    description: "Descifra torre-windows/secrets.yml"
+    vault_password: "{{ vault_windows_vault_password }}"
+    vault_id: "windows"
+
+  - name: "Vault - Torre Cloud"
+    organization: "Torre-Cloud"
+    description: "Descifra torre-cloud/secrets.yml"
+    vault_password: "{{ vault_cloud_vault_password }}"
+    vault_id: "cloud"
+
+# === Definición de torres ===
+bootstrap_torres:
+  - torre_name: "Torre Linux"
+    torre_dir: "torre-linux"
+    organization: "Torre-Linux"
+    vault_credential: "Vault - Torre Linux"
+
+  - torre_name: "Torre Windows"
+    torre_dir: "torre-windows"
+    organization: "Torre-Windows"
+    vault_credential: "Vault - Torre Windows"
+
+  - torre_name: "Torre Cloud"
+    torre_dir: "torre-cloud"
+    organization: "Torre-Cloud"
+    vault_credential: "Vault - Torre Cloud"
