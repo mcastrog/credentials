@@ -1,0 +1,65 @@
+---
+controller_inventories:
+  - name: "AWS Produccion"
+    organization: "Torre-Cloud"
+    description: "Instancias EC2 de producción"
+  - name: "VMware Produccion"
+    organization: "Torre-Cloud"
+    description: "VMs en vCenter corporativo"
+  - name: "Azure Produccion"
+    organization: "Torre-Cloud"
+    description: "Recursos Azure de producción"
+
+controller_groups:
+  - name: "ec2_webservers"
+    inventory: "AWS Produccion"
+    description: "Instancias EC2 con rol de webserver"
+  - name: "ec2_databases"
+    inventory: "AWS Produccion"
+    description: "Instancias RDS/EC2 con bases de datos"
+  - name: "vm_rhel"
+    inventory: "VMware Produccion"
+    description: "VMs RHEL en vCenter"
+  - name: "vm_windows"
+    inventory: "VMware Produccion"
+    description: "VMs Windows en vCenter"
+
+controller_hosts:
+  - name: "ec2-web-01.eu-west-1.compute.internal"
+    inventory: "AWS Produccion"
+    variables:
+      ansible_host: "10.100.1.11"
+      aws_region: "eu-west-1"
+      instance_type: "m5.xlarge"
+  - name: "ec2-web-02.eu-west-1.compute.internal"
+    inventory: "AWS Produccion"
+    variables:
+      ansible_host: "10.100.1.12"
+      aws_region: "eu-west-1"
+      instance_type: "m5.xlarge"
+  - name: "vm-rhel-prod-01.mapfre.local"
+    inventory: "VMware Produccion"
+    variables:
+      ansible_host: "10.50.1.11"
+      vcenter_folder: "/Datacenter/vm/Linux"
+  - name: "vm-win-prod-01.mapfre.local"
+    inventory: "VMware Produccion"
+    variables:
+      ansible_host: "10.50.2.11"
+      ansible_connection: "winrm"
+      vcenter_folder: "/Datacenter/vm/Windows"
+
+controller_group_children:
+  - group: "ec2_webservers"
+    inventory: "AWS Produccion"
+    hosts:
+      - "ec2-web-01.eu-west-1.compute.internal"
+      - "ec2-web-02.eu-west-1.compute.internal"
+  - group: "vm_rhel"
+    inventory: "VMware Produccion"
+    hosts:
+      - "vm-rhel-prod-01.mapfre.local"
+  - group: "vm_windows"
+    inventory: "VMware Produccion"
+    hosts:
+      - "vm-win-prod-01.mapfre.local"

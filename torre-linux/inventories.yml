@@ -1,0 +1,81 @@
+---
+controller_inventories:
+  - name: "Linux Produccion"
+    organization: "Torre-Linux"
+    description: "Servidores Linux de producción"
+  - name: "Linux Pre-Produccion"
+    organization: "Torre-Linux"
+    description: "Servidores Linux de pre-producción"
+
+controller_groups:
+  # Produccion
+  - name: "webservers"
+    inventory: "Linux Produccion"
+    description: "Servidores web Apache/Nginx"
+  - name: "dbservers"
+    inventory: "Linux Produccion"
+    description: "Servidores de base de datos Oracle/PostgreSQL"
+  - name: "appservers"
+    inventory: "Linux Produccion"
+    description: "Servidores de aplicaciones JBoss/Tomcat"
+  # Pre-Produccion
+  - name: "webservers"
+    inventory: "Linux Pre-Produccion"
+    description: "Servidores web pre-producción"
+  - name: "dbservers"
+    inventory: "Linux Pre-Produccion"
+    description: "Servidores BD pre-producción"
+
+controller_hosts:
+  # Produccion
+  - name: "web-prod-01.mapfre.local"
+    inventory: "Linux Produccion"
+    variables:
+      ansible_host: "10.10.1.11"
+  - name: "web-prod-02.mapfre.local"
+    inventory: "Linux Produccion"
+    variables:
+      ansible_host: "10.10.1.12"
+  - name: "db-prod-01.mapfre.local"
+    inventory: "Linux Produccion"
+    variables:
+      ansible_host: "10.10.2.11"
+      oracle_sid: "PROD01"
+  - name: "app-prod-01.mapfre.local"
+    inventory: "Linux Produccion"
+    variables:
+      ansible_host: "10.10.3.11"
+      jboss_home: "/opt/jboss"
+  # Pre-Produccion
+  - name: "web-pre-01.mapfre.local"
+    inventory: "Linux Pre-Produccion"
+    variables:
+      ansible_host: "10.20.1.11"
+  - name: "db-pre-01.mapfre.local"
+    inventory: "Linux Pre-Produccion"
+    variables:
+      ansible_host: "10.20.2.11"
+      oracle_sid: "PRE01"
+
+controller_group_children:
+  - group: "webservers"
+    inventory: "Linux Produccion"
+    hosts:
+      - "web-prod-01.mapfre.local"
+      - "web-prod-02.mapfre.local"
+  - group: "dbservers"
+    inventory: "Linux Produccion"
+    hosts:
+      - "db-prod-01.mapfre.local"
+  - group: "appservers"
+    inventory: "Linux Produccion"
+    hosts:
+      - "app-prod-01.mapfre.local"
+  - group: "webservers"
+    inventory: "Linux Pre-Produccion"
+    hosts:
+      - "web-pre-01.mapfre.local"
+  - group: "dbservers"
+    inventory: "Linux Pre-Produccion"
+    hosts:
+      - "db-pre-01.mapfre.local"

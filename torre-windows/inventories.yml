@@ -1,0 +1,70 @@
+---
+controller_inventories:
+  - name: "Windows Produccion"
+    organization: "Torre-Windows"
+    description: "Servidores Windows de producción"
+  - name: "Windows Pre-Produccion"
+    organization: "Torre-Windows"
+    description: "Servidores Windows de pre-producción"
+
+controller_groups:
+  - name: "iis_servers"
+    inventory: "Windows Produccion"
+    description: "Servidores IIS web"
+  - name: "sql_servers"
+    inventory: "Windows Produccion"
+    description: "Servidores SQL Server"
+  - name: "domain_controllers"
+    inventory: "Windows Produccion"
+    description: "Controladores de dominio AD"
+  - name: "iis_servers"
+    inventory: "Windows Pre-Produccion"
+    description: "Servidores IIS pre-producción"
+
+controller_hosts:
+  - name: "iis-prod-01.mapfre.local"
+    inventory: "Windows Produccion"
+    variables:
+      ansible_host: "10.10.10.11"
+      ansible_connection: "winrm"
+      ansible_winrm_transport: "kerberos"
+  - name: "iis-prod-02.mapfre.local"
+    inventory: "Windows Produccion"
+    variables:
+      ansible_host: "10.10.10.12"
+      ansible_connection: "winrm"
+      ansible_winrm_transport: "kerberos"
+  - name: "sql-prod-01.mapfre.local"
+    inventory: "Windows Produccion"
+    variables:
+      ansible_host: "10.10.11.11"
+      ansible_connection: "winrm"
+  - name: "dc-prod-01.mapfre.local"
+    inventory: "Windows Produccion"
+    variables:
+      ansible_host: "10.10.12.11"
+      ansible_connection: "winrm"
+  - name: "iis-pre-01.mapfre.local"
+    inventory: "Windows Pre-Produccion"
+    variables:
+      ansible_host: "10.20.10.11"
+      ansible_connection: "winrm"
+
+controller_group_children:
+  - group: "iis_servers"
+    inventory: "Windows Produccion"
+    hosts:
+      - "iis-prod-01.mapfre.local"
+      - "iis-prod-02.mapfre.local"
+  - group: "sql_servers"
+    inventory: "Windows Produccion"
+    hosts:
+      - "sql-prod-01.mapfre.local"
+  - group: "domain_controllers"
+    inventory: "Windows Produccion"
+    hosts:
+      - "dc-prod-01.mapfre.local"
+  - group: "iis_servers"
+    inventory: "Windows Pre-Produccion"
+    hosts:
+      - "iis-pre-01.mapfre.local"

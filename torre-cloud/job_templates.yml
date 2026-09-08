@@ -1,0 +1,31 @@
+---
+controller_templates:
+  - name: "Provision EC2 Instance"
+    organization: "Torre-Cloud"
+    project: "Cloud Provisioning"
+    playbook: "lamp_simple/site.yml"
+    inventory: "AWS Produccion"
+    credential: "AWS Produccion"
+    description: "Provisionar nuevas instancias EC2 en AWS"
+    ask_variables_on_launch: true
+    verbosity: 0
+
+  - name: "VM Snapshot vCenter"
+    organization: "Torre-Cloud"
+    project: "VMware Management"
+    playbook: "lamp_simple/site.yml"
+    inventory: "VMware Produccion"
+    credential: "vCenter Corporativo"
+    description: "Crear snapshots de VMs antes de cambios"
+    ask_limit_on_launch: true
+    verbosity: 0
+
+  - name: "Deploy Azure Resources"
+    organization: "Torre-Cloud"
+    project: "Cloud Provisioning"
+    playbook: "lamp_simple/site.yml"
+    inventory: "Azure Produccion"
+    credential: "Azure Produccion"
+    description: "Desplegar recursos en Azure via ARM templates"
+    ask_variables_on_launch: true
+    verbosity: 1

@@ -1,0 +1,33 @@
+---
+controller_organizations:
+  - name: "Torre-Linux"
+    description: "Equipo de administración Linux"
+  - name: "Torre-Windows"
+    description: "Equipo de administración Windows"
+  - name: "Torre-Cloud"
+    description: "Equipo de infraestructura Cloud"
+
+controller_teams:
+  # Torre-Linux
+  - name: "Linux-Admins"
+    organization: "Torre-Linux"
+    description: "Administradores Linux con permisos completos"
+  - name: "Linux-Operators"
+    organization: "Torre-Linux"
+    description: "Operadores Linux — solo ejecución de JTs"
+
+  # Torre-Windows
+  - name: "Windows-Admins"
+    organization: "Torre-Windows"
+    description: "Administradores Windows con permisos completos"
+  - name: "Windows-Operators"
+    organization: "Torre-Windows"
+    description: "Operadores Windows — solo ejecución de JTs"
+
+  # Torre-Cloud
+  - name: "Cloud-Engineers"
+    organization: "Torre-Cloud"
+    description: "Ingenieros Cloud con permisos completos"
+  - name: "Cloud-Viewers"
+    organization: "Torre-Cloud"
+    description: "Visualización de recursos Cloud"

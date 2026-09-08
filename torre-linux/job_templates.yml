@@ -1,0 +1,40 @@
+---
+controller_templates:
+  - name: "Patch Linux Produccion"
+    organization: "Torre-Linux"
+    project: "Parcheo Linux"
+    playbook: "site.yml"
+    inventory: "Linux Produccion"
+    credential: "Linux Produccion"
+    description: "Parcheo mensual de servidores Linux de producción"
+    ask_limit_on_launch: true
+    verbosity: 0
+
+  - name: "Patch Linux Pre-Produccion"
+    organization: "Torre-Linux"
+    project: "Parcheo Linux"
+    playbook: "site.yml"
+    inventory: "Linux Pre-Produccion"
+    credential: "Linux Pre-Produccion"
+    description: "Parcheo de servidores Linux de pre-producción"
+    ask_limit_on_launch: true
+    verbosity: 0
+
+  - name: "Hardening CIS Produccion"
+    organization: "Torre-Linux"
+    project: "Hardening RHEL"
+    playbook: "site.yml"
+    inventory: "Linux Produccion"
+    credential: "Linux Produccion"
+    description: "Aplicar baseline CIS a servidores de producción"
+    ask_limit_on_launch: true
+    verbosity: 1
+
+  - name: "Backup Oracle Diario"
+    organization: "Torre-Linux"
+    project: "Backup Oracle"
+    playbook: "lamp_simple/site.yml"
+    inventory: "Linux Produccion"
+    credential: "Oracle DB Produccion"
+    description: "Backup diario de bases de datos Oracle"
+    verbosity: 0

@@ -1,0 +1,43 @@
+---
+- name: "CaC - Configuración común (organizaciones y equipos)"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - common/secrets.yml
+    - common/organizations.yml
+
+  vars:
+    controller_hostname: "https://aap-aap.apps.qww9gs2l.eastus.aroapp.io"
+    controller_username: admin
+    controller_password: "{{ vault_controller_password }}"
+    controller_validate_certs: false
+
+  tasks:
+    - name: Crear/actualizar organizaciones
+      ansible.controller.organization:
+        controller_host: "{{ controller_hostname }}"
+        controller_username: "{{ controller_username }}"
+        controller_password: "{{ controller_password }}"
+        validate_certs: "{{ controller_validate_certs }}"
+        name: "{{ item.name }}"
+        description: "{{ item.description | default(omit) }}"
+        state: present
+      loop: "{{ controller_organizations }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Crear/actualizar equipos
+      ansible.controller.team:
+        controller_host: "{{ controller_hostname }}"
+        controller_username: "{{ controller_username }}"
+        controller_password: "{{ controller_password }}"
+        validate_certs: "{{ controller_validate_certs }}"
+        name: "{{ item.name }}"
+        organization: "{{ item.organization }}"
+        description: "{{ item.description | default(omit) }}"
+        state: present
+      loop: "{{ controller_teams }}"
+      loop_control:
+        label: "{{ item.name }} ({{ item.organization }})"

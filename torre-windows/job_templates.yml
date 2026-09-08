@@ -1,0 +1,31 @@
+---
+controller_templates:
+  - name: "Patch Windows Produccion"
+    organization: "Torre-Windows"
+    project: "Parcheo Windows"
+    playbook: "lamp_simple/site.yml"
+    inventory: "Windows Produccion"
+    credential: "Windows Produccion"
+    description: "Windows Update mensual en servidores de producción"
+    ask_limit_on_launch: true
+    verbosity: 0
+
+  - name: "Patch Windows Pre-Produccion"
+    organization: "Torre-Windows"
+    project: "Parcheo Windows"
+    playbook: "lamp_simple/site.yml"
+    inventory: "Windows Pre-Produccion"
+    credential: "Windows Pre-Produccion"
+    description: "Windows Update en servidores de pre-producción"
+    ask_limit_on_launch: true
+    verbosity: 0
+
+  - name: "Join AD Domain"
+    organization: "Torre-Windows"
+    project: "Active Directory"
+    playbook: "lamp_simple/site.yml"
+    inventory: "Windows Produccion"
+    credential: "Windows Produccion"
+    description: "Unir servidores al dominio Active Directory"
+    ask_limit_on_launch: true
+    verbosity: 1
