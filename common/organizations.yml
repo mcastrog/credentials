@@ -1,7 +1,7 @@
 ---
 controller_organizations:
   - name: "Torre-Linux"
-    description: "Equipo de administración Linux"
+    description: "Equipo de administración Linux - Infraestructura core"
   - name: "Torre-Windows"
     description: "Equipo de administración Windows"
   - name: "Torre-Cloud"
