@@ -38,3 +38,13 @@ controller_templates:
     credential: "Oracle DB Produccion"
     description: "Backup diario de bases de datos Oracle"
     verbosity: 0
+
+  - name: "Compliance RHEL Produccion"
+    organization: "Torre-Linux"
+    project: "Hardening RHEL"
+    playbook: "lamp_simple/site.yml"
+    inventory: "Linux Produccion"
+    credential: "Linux Produccion"
+    description: "Verificacion de compliance RHEL contra politica corporativa"
+    ask_limit_on_launch: true
+    verbosity: 0
