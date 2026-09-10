@@ -47,4 +47,5 @@ controller_templates:
     credential: "Linux Produccion"
     description: "Verificacion de compliance RHEL contra politica corporativa Mapfre"
     ask_limit_on_launch: true
+    state: absent
     verbosity: 0
