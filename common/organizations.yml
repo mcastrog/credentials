@@ -1,5 +1,5 @@
 ---
-controller_organizations:
+aap_organizations:
   - name: "Torre-Linux"
     description: "Equipo de administración Linux - Infraestructura core"
   - name: "Torre-Windows"
@@ -7,7 +7,7 @@ controller_organizations:
   - name: "Torre-Cloud"
     description: "Equipo de infraestructura Cloud"
 
-controller_teams:
+aap_teams:
   # Torre-Linux
   - name: "Linux-Admins"
     organization: "Torre-Linux"

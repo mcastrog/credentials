@@ -1,49 +1,125 @@
 ---
-# === Repo CaC ===
 bootstrap_cac_repo: "https://github.com/mcastrog/credentials.git"
 
-# === EE con infra.controller_configuration ===
 bootstrap_ee_image: "image-registry.openshift-image-registry.svc:5000/aap/ee-cac-dispatch:latest"
 
-# === Credenciales Vault por torre (los valores vienen de common/secrets.yml) ===
-bootstrap_vault_credentials:
+controller_credentials:
   - name: "Vault - Master"
     organization: "Default"
+    credential_type: "Vault"
     description: "Vault master — descifra common/secrets.yml"
-    vault_password: "{{ vault_master_password }}"
-    vault_id: "master"
+    inputs:
+      vault_password: "{{ vault_master_password }}"
+      vault_id: "master"
 
   - name: "Vault - Torre Linux"
     organization: "Torre-Linux"
+    credential_type: "Vault"
     description: "Descifra torre-linux/secrets.yml"
-    vault_password: "{{ vault_linux_vault_password }}"
-    vault_id: "linux"
+    inputs:
+      vault_password: "{{ vault_linux_vault_password }}"
+      vault_id: "linux"
 
   - name: "Vault - Torre Windows"
     organization: "Torre-Windows"
+    credential_type: "Vault"
     description: "Descifra torre-windows/secrets.yml"
-    vault_password: "{{ vault_windows_vault_password }}"
-    vault_id: "windows"
+    inputs:
+      vault_password: "{{ vault_windows_vault_password }}"
+      vault_id: "windows"
 
   - name: "Vault - Torre Cloud"
     organization: "Torre-Cloud"
+    credential_type: "Vault"
     description: "Descifra torre-cloud/secrets.yml"
-    vault_password: "{{ vault_cloud_vault_password }}"
-    vault_id: "cloud"
+    inputs:
+      vault_password: "{{ vault_cloud_vault_password }}"
+      vault_id: "cloud"
 
-# === Definición de torres ===
-bootstrap_torres:
-  - torre_name: "Torre Linux"
-    torre_dir: "torre-linux"
-    organization: "Torre-Linux"
-    vault_credential: "Vault - Torre Linux"
+  - name: "GitHub Webhook Token"
+    organization: "Default"
+    credential_type: "GitHub Personal Access Token"
+    inputs:
+      token: "{{ vault_github_token }}"
 
-  - torre_name: "Torre Windows"
-    torre_dir: "torre-windows"
-    organization: "Torre-Windows"
-    vault_credential: "Vault - Torre Windows"
+controller_execution_environments:
+  - name: "EE CaC Dispatch"
+    image: "{{ bootstrap_ee_image }}"
+    pull: missing
+    description: "EE con infra.aap_configuration para CaC con dispatch"
 
-  - torre_name: "Torre Cloud"
-    torre_dir: "torre-cloud"
-    organization: "Torre-Cloud"
-    vault_credential: "Vault - Torre Cloud"
+controller_projects:
+  - name: "CaC - Configuración Completa"
+    organization: "Default"
+    scm_type: git
+    scm_url: "{{ bootstrap_cac_repo }}"
+    scm_branch: main
+    scm_update_on_launch: true
+    description: "Repo con toda la configuración de AAP como código"
+    wait: true
+
+controller_templates:
+  - name: "CaC - Common (Orgs y Equipos)"
+    organization: "Default"
+    project: "CaC - Configuración Completa"
+    playbook: "playbooks/site_common.yml"
+    inventory: "Demo Inventory"
+    execution_environment: "EE CaC Dispatch"
+    credentials:
+      - "Vault - Master"
+
+  - name: "CaC - Torre Linux"
+    organization: "Default"
+    project: "CaC - Configuración Completa"
+    playbook: "playbooks/site_torre.yml"
+    inventory: "Demo Inventory"
+    execution_environment: "EE CaC Dispatch"
+    extra_vars:
+      torre: "torre-linux"
+    credentials:
+      - "Vault - Master"
+      - "Vault - Torre Linux"
+
+  - name: "CaC - Torre Windows"
+    organization: "Default"
+    project: "CaC - Configuración Completa"
+    playbook: "playbooks/site_torre.yml"
+    inventory: "Demo Inventory"
+    execution_environment: "EE CaC Dispatch"
+    extra_vars:
+      torre: "torre-windows"
+    credentials:
+      - "Vault - Master"
+      - "Vault - Torre Windows"
+
+  - name: "CaC - Torre Cloud"
+    organization: "Default"
+    project: "CaC - Configuración Completa"
+    playbook: "playbooks/site_torre.yml"
+    inventory: "Demo Inventory"
+    execution_environment: "EE CaC Dispatch"
+    extra_vars:
+      torre: "torre-cloud"
+    credentials:
+      - "Vault - Master"
+      - "Vault - Torre Cloud"
+
+controller_workflows:
+  - name: "CaC - Despliegue Completo"
+    organization: "Default"
+    description: "Push a git → webhook → common + 3 torres en paralelo"
+    webhook_service: github
+    webhook_credential: "GitHub Webhook Token"
+    simplified_workflow_nodes:
+      - identifier: common
+        unified_job_template: "CaC - Common (Orgs y Equipos)"
+        success_nodes:
+          - torre-linux
+          - torre-windows
+          - torre-cloud
+      - identifier: torre-linux
+        unified_job_template: "CaC - Torre Linux"
+      - identifier: torre-windows
+        unified_job_template: "CaC - Torre Windows"
+      - identifier: torre-cloud
+        unified_job_template: "CaC - Torre Cloud"

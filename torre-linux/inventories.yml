@@ -7,25 +7,6 @@ controller_inventories:
     organization: "Torre-Linux"
     description: "Servidores Linux de pre-producción"
 
-controller_groups:
-  # Produccion
-  - name: "webservers"
-    inventory: "Linux Produccion"
-    description: "Servidores web Apache/Nginx"
-  - name: "dbservers"
-    inventory: "Linux Produccion"
-    description: "Servidores de base de datos Oracle/PostgreSQL"
-  - name: "appservers"
-    inventory: "Linux Produccion"
-    description: "Servidores de aplicaciones JBoss/Tomcat"
-  # Pre-Produccion
-  - name: "webservers"
-    inventory: "Linux Pre-Produccion"
-    description: "Servidores web pre-producción"
-  - name: "dbservers"
-    inventory: "Linux Pre-Produccion"
-    description: "Servidores BD pre-producción"
-
 controller_hosts:
   # Produccion
   - name: "web-prod-01.mapfre.local"
@@ -57,25 +38,32 @@ controller_hosts:
       ansible_host: "10.20.2.11"
       oracle_sid: "PRE01"
 
-controller_group_children:
-  - group: "webservers"
+controller_groups:
+  # Produccion
+  - name: "webservers"
     inventory: "Linux Produccion"
+    description: "Servidores web Apache/Nginx"
     hosts:
       - "web-prod-01.mapfre.local"
       - "web-prod-02.mapfre.local"
-  - group: "dbservers"
+  - name: "dbservers"
     inventory: "Linux Produccion"
+    description: "Servidores de base de datos Oracle/PostgreSQL"
     hosts:
       - "db-prod-01.mapfre.local"
-  - group: "appservers"
+  - name: "appservers"
     inventory: "Linux Produccion"
+    description: "Servidores de aplicaciones JBoss/Tomcat"
     hosts:
       - "app-prod-01.mapfre.local"
-  - group: "webservers"
+  # Pre-Produccion
+  - name: "webservers"
     inventory: "Linux Pre-Produccion"
+    description: "Servidores web pre-producción"
     hosts:
       - "web-pre-01.mapfre.local"
-  - group: "dbservers"
+  - name: "dbservers"
     inventory: "Linux Pre-Produccion"
+    description: "Servidores BD pre-producción"
     hosts:
       - "db-pre-01.mapfre.local"

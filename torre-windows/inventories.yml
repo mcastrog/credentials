@@ -7,20 +7,6 @@ controller_inventories:
     organization: "Torre-Windows"
     description: "Servidores Windows de pre-producción"
 
-controller_groups:
-  - name: "iis_servers"
-    inventory: "Windows Produccion"
-    description: "Servidores IIS web"
-  - name: "sql_servers"
-    inventory: "Windows Produccion"
-    description: "Servidores SQL Server"
-  - name: "domain_controllers"
-    inventory: "Windows Produccion"
-    description: "Controladores de dominio AD"
-  - name: "iis_servers"
-    inventory: "Windows Pre-Produccion"
-    description: "Servidores IIS pre-producción"
-
 controller_hosts:
   - name: "iis-prod-01.mapfre.local"
     inventory: "Windows Produccion"
@@ -50,21 +36,25 @@ controller_hosts:
       ansible_host: "10.20.10.11"
       ansible_connection: "winrm"
 
-controller_group_children:
-  - group: "iis_servers"
+controller_groups:
+  - name: "iis_servers"
     inventory: "Windows Produccion"
+    description: "Servidores IIS web"
     hosts:
       - "iis-prod-01.mapfre.local"
       - "iis-prod-02.mapfre.local"
-  - group: "sql_servers"
+  - name: "sql_servers"
     inventory: "Windows Produccion"
+    description: "Servidores SQL Server"
     hosts:
       - "sql-prod-01.mapfre.local"
-  - group: "domain_controllers"
+  - name: "domain_controllers"
     inventory: "Windows Produccion"
+    description: "Controladores de dominio AD"
     hosts:
       - "dc-prod-01.mapfre.local"
-  - group: "iis_servers"
+  - name: "iis_servers"
     inventory: "Windows Pre-Produccion"
+    description: "Servidores IIS pre-producción"
     hosts:
       - "iis-pre-01.mapfre.local"
